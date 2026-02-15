@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
 import {
   API_ENDPOINTS,
   GenerateAppRequest,
@@ -59,14 +60,16 @@ export function useJobGeneration() {
     });
 
     // Generate IDs
-    const projectId = uuidv4();
-    const screenId = uuidv4();
+    const projectId = nanoid(10);
+    const screenId = nanoid(10);
+    const userId = "5beaabd82ac6767c86dc311c";
 
     const requestBody: GenerateAppRequest = {
       prompt,
       project_id: projectId,
       screen_id: screenId,
       screen_name: screenName,
+      user_id: userId,
     };
 
     try {

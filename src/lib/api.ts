@@ -1,10 +1,21 @@
 // API configuration - uses environment variable for base URL
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// Backend context path (e.g. /dev when running locally - must match backend "Mounting application at context path")
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5010';
+export const API_CONTEXT_PATH = import.meta.env.VITE_API_CONTEXT_PATH || 'dev';
 
-// API endpoints
+// Liberty FS base URL for previewing generated Angular app (dist served at LIBERTY_FS_ROOT)
+// Preview URL pattern: {LIBERTY_FS_BASE_URL}{screen_id}-v{version}/
+export const LIBERTY_FS_BASE_URL = (import.meta.env.VITE_LIBERTY_FS_BASE_URL || 'http://localhost:843/').replace(/\/?$/, '/');
+
+/** Build the preview URL for a completed screen (iframe / open in new tab). */
+export function getPreviewUrl(screenId: string, version: string): string {
+  return `${LIBERTY_FS_BASE_URL}${screenId}-v${version}/`;
+}
+
+// API endpoints (path under context: e.g. http://localhost:5010/dev/agent/...)
 export const API_ENDPOINTS = {
-  generateAngularApp: `${API_BASE_URL}/aiqod-agent/agent/generate-angular-app`,
-  stream: (jobId: string) => `${API_BASE_URL}/aiqod-agent/agent/stream/${jobId}`,
+  generateAngularApp: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/generate-angular-app`,
+  stream: (jobId: string) => `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/stream/${jobId}`,
 } as const;
 
 // Request types
@@ -12,11 +23,11 @@ export interface GenerateAppRequest {
   prompt: string;
   project_id: string;
   screen_id: string;
+  user_id: string;
   screen_name?: string;
   description?: string;
-  orgId?: string;
-  subscriberId?: string;
-  userId?: string;
+  org_id?: string;
+  subscriber_id?: string;
 }
 
 // Response types

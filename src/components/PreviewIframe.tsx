@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ExternalLink, Copy, Check, RefreshCw, AlertCircle, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { CompletePayload } from '@/lib/api';
+import { CompletePayload, getPreviewUrl } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 interface PreviewIframeProps {
@@ -15,6 +15,9 @@ export function PreviewIframe({ result, className }: PreviewIframeProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Preview URL: LIBERTY_FS_BASE_URL + app-id (screen_id-vversion) for Angular dist
+  const previewUrl = getPreviewUrl(result.screen_id, result.version);
 
   const handleLoad = useCallback(() => {
     setIsLoading(false);
@@ -28,27 +31,26 @@ export function PreviewIframe({ result, className }: PreviewIframeProps) {
 
   const handleCopyLink = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(result.public_url);
+      await navigator.clipboard.writeText(previewUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
-  }, [result.public_url]);
+  }, [previewUrl]);
 
   const handleOpenNewTab = useCallback(() => {
-    window.open(result.public_url, '_blank', 'noopener,noreferrer');
-  }, [result.public_url]);
+    window.open(previewUrl, '_blank', 'noopener,noreferrer');
+  }, [previewUrl]);
 
   const handleRetry = useCallback(() => {
     setIsLoading(true);
     setHasError(false);
-    // Force iframe reload by triggering a re-render
     const iframe = document.querySelector('iframe[data-preview]') as HTMLIFrameElement;
     if (iframe) {
-      iframe.src = result.public_url;
+      iframe.src = previewUrl;
     }
-  }, [result.public_url]);
+  }, [previewUrl]);
 
   return (
     <motion.div
@@ -155,7 +157,7 @@ export function PreviewIframe({ result, className }: PreviewIframeProps) {
 
         <iframe
           data-preview
-          src={result.public_url}
+          src={previewUrl}
           onLoad={handleLoad}
           onError={handleError}
           className="w-full h-full min-h-[500px] border-0"
