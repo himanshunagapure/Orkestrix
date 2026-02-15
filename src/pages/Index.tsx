@@ -1,61 +1,38 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/Header';
 import { PromptInput } from '@/components/PromptInput';
-import { PromptDisplay } from '@/components/PromptDisplay';
 import { LiveLogFeed } from '@/components/LiveLogFeed';
 import { ProgressIndicator } from '@/components/ProgressIndicator';
 import { PreviewIframe } from '@/components/PreviewIframe';
 import { ErrorDisplay } from '@/components/ErrorDisplay';
+import { ChatPanel } from '@/components/ChatPanel';
+import { PromptDisplay } from '@/components/PromptDisplay';
 import { useJobGeneration } from '@/hooks/useJobGeneration';
 import { Sparkles, Layers, Zap, Code2 } from 'lucide-react';
 
 const features = [
-  {
-    icon: Sparkles,
-    title: "AI-Powered",
-    description: "Natural language to UI screens",
-  },
-  {
-    icon: Layers,
-    title: "Production Ready",
-    description: "Clean, maintainable code output",
-  },
-  {
-    icon: Zap,
-    title: "Fast Generation",
-    description: "Complete screens in minutes",
-  },
-  {
-    icon: Code2,
-    title: "Angular Apps",
-    description: "Full Angular component generation",
-  },
+  { icon: Sparkles, title: "AI-Powered", description: "Natural language to UI screens" },
+  { icon: Layers, title: "Production Ready", description: "Clean, maintainable code output" },
+  { icon: Zap, title: "Fast Generation", description: "Complete screens in minutes" },
+  { icon: Code2, title: "Angular Apps", description: "Full Angular component generation" },
 ];
 
 const Index = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const jobGeneration = useJobGeneration();
   const [initialJobId] = useState(() => searchParams.get('job_id'));
 
   const {
-    status,
-    jobId,
-    prompt,
-    logs,
-    result,
-    error,
-    submitJob,
-    reconnect,
-    reset,
+    status, jobId, prompt, logs, result, error,
+    chatMessages, isUpdating,
+    submitJob, submitUpdate, reconnect, reset,
   } = jobGeneration;
 
   // Handle URL job_id on mount
   useEffect(() => {
     if (initialJobId && status === 'idle') {
-      // Try to reconnect to an existing job
       reconnect(initialJobId);
     }
   }, [initialJobId, status, reconnect]);
@@ -77,23 +54,22 @@ const Index = () => {
   };
 
   const handleRetry = () => {
-    if (prompt) {
-      submitJob(prompt);
-    }
+    if (prompt) submitJob(prompt);
   };
 
   const isBuilding = status === 'submitting' || status === 'streaming';
   const showBuilder = status === 'idle' && !initialJobId;
-  const showProgress = isBuilding || status === 'complete' || status === 'error';
+  const showProgress = isBuilding || status === 'error';
+  const showEvolution = status === 'complete' && result;
   const isSubmitting = status === 'submitting';
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header showReset={showProgress} onReset={handleReset} />
+    <div className="min-h-screen bg-background flex flex-col">
+      <Header showReset={!showBuilder} onReset={handleReset} />
 
-      <main className="pt-16">
+      <main className="pt-16 flex-1 flex flex-col">
         <AnimatePresence mode="wait">
-          {showBuilder ? (
+          {showBuilder && (
             <motion.div
               key="builder"
               initial={{ opacity: 0 }}
@@ -103,18 +79,12 @@ const Index = () => {
             >
               {/* Hero section */}
               <section className="relative overflow-hidden py-20 md:py-32">
-                {/* Background pattern */}
                 <div className="absolute inset-0 bg-hero-pattern opacity-50" />
-                
-                {/* Gradient overlay */}
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/50 to-background" />
-
-                {/* Glow effects */}
                 <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
                 <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-info/10 rounded-full blur-3xl" />
 
                 <div className="relative container mx-auto px-4">
-                  {/* Hero text */}
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -125,18 +95,13 @@ const Index = () => {
                       <span className="gradient-text">AI</span>
                     </h1>
                     <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-                      Describe your screen in natural language and let AI generate 
+                      Describe your screen in natural language and let AI generate
                       production-ready Angular components in minutes.
                     </p>
                   </motion.div>
 
-                  {/* Prompt input */}
-                  <PromptInput
-                    onSubmit={handleSubmit}
-                    isSubmitting={isSubmitting}
-                  />
+                  <PromptInput onSubmit={handleSubmit} isSubmitting={isSubmitting} />
 
-                  {/* Features grid */}
                   <motion.div
                     initial={{ opacity: 0, y: 40 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -155,16 +120,17 @@ const Index = () => {
                           <feature.icon className="h-5 w-5 text-primary" />
                         </div>
                         <h3 className="font-medium mb-1">{feature.title}</h3>
-                        <p className="text-xs text-muted-foreground">
-                          {feature.description}
-                        </p>
+                        <p className="text-xs text-muted-foreground">{feature.description}</p>
                       </motion.div>
                     ))}
                   </motion.div>
                 </div>
               </section>
             </motion.div>
-          ) : (
+          )}
+
+          {/* Building / Error state */}
+          {showProgress && (
             <motion.div
               key="progress"
               initial={{ opacity: 0 }}
@@ -172,47 +138,55 @@ const Index = () => {
               exit={{ opacity: 0 }}
               className="container mx-auto px-4 py-8"
             >
-              {/* Split view - Prompt left, Progress/Preview right */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left side - Prompt display */}
                 <div className="space-y-6">
                   <PromptDisplay prompt={prompt} />
-                  
-                  {/* Show logs on mobile below prompt */}
                   <div className="lg:hidden">
-                    {isBuilding && (
-                      <LiveLogFeed logs={logs} className="flex-1" />
-                    )}
+                    {isBuilding && <LiveLogFeed logs={logs} className="flex-1" />}
                   </div>
                 </div>
-
-                {/* Right side - Status / Logs / Preview */}
                 <div className="space-y-6">
-                  {/* Progress indicator */}
-                  {isBuilding && (
-                    <ProgressIndicator isActive={true} />
-                  )}
-
-                  {/* Live logs - desktop */}
+                  {isBuilding && <ProgressIndicator isActive={true} />}
                   {isBuilding && (
                     <div className="hidden lg:block">
                       <LiveLogFeed logs={logs} className="flex-1" />
                     </div>
                   )}
-
-                  {/* Error display */}
                   {status === 'error' && error && (
-                    <ErrorDisplay
-                      error={error}
-                      onRetry={handleRetry}
-                      onBack={handleReset}
-                    />
+                    <ErrorDisplay error={error} onRetry={handleRetry} onBack={handleReset} />
                   )}
+                </div>
+              </div>
+            </motion.div>
+          )}
 
-                  {/* Result preview */}
-                  {status === 'complete' && result && (
-                    <PreviewIframe result={result} />
-                  )}
+          {/* Evolution mode — Chat + Preview */}
+          {showEvolution && (
+            <motion.div
+              key="evolution"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex flex-col"
+            >
+              <div className="flex-1 flex flex-col lg:flex-row min-h-0">
+                {/* Left: Chat Panel (35%) */}
+                <div className="lg:w-[35%] lg:min-w-[320px] lg:max-w-[480px] border-r border-border flex flex-col h-[50vh] lg:h-[calc(100vh-4rem)]">
+                  <ChatPanel
+                    messages={chatMessages}
+                    isUpdating={isUpdating}
+                    onSendMessage={submitUpdate}
+                    originalPrompt={prompt}
+                    className="flex-1 rounded-none border-0"
+                  />
+                </div>
+
+                {/* Right: Preview (65%) */}
+                <div className="flex-1 flex flex-col h-[50vh] lg:h-[calc(100vh-4rem)]">
+                  <PreviewIframe
+                    result={result}
+                    className="flex-1 rounded-none border-0 border-l-0"
+                  />
                 </div>
               </div>
             </motion.div>
@@ -220,12 +194,14 @@ const Index = () => {
         </AnimatePresence>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border/50 bg-background/50 backdrop-blur-sm py-6 mt-auto">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>AI Screen Builder — Generate production-ready UI screens with natural language</p>
-        </div>
-      </footer>
+      {/* Footer — only on landing */}
+      {showBuilder && (
+        <footer className="border-t border-border/50 bg-background/50 backdrop-blur-sm py-6 mt-auto">
+          <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
+            <p>AI Screen Builder — Generate production-ready UI screens with natural language</p>
+          </div>
+        </footer>
+      )}
     </div>
   );
 };
