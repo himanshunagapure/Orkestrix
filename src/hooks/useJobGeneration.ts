@@ -7,6 +7,8 @@ import {
   GenerateAppResponse,
   SSEEvent,
   CompletePayload,
+  UpdateCompletePayload,
+  normalizeToCompletePayload,
   JobStatus,
   JobState,
   ChatMessage,
@@ -110,6 +112,11 @@ export function useJobGeneration() {
       result: null,
       error: null,
     });
+
+    // Generate IDs
+    const projectId = nanoid(10);
+    const screenId = nanoid(10);
+    const userId = "5beaabd82ac6767c86dc311c";
 
     const requestBody: GenerateAppRequest = {
       prompt,
@@ -217,12 +224,11 @@ export function useJobGeneration() {
             )
           );
         },
-        // onComplete
+        // onComplete — update endpoint returns angular.public_url, angular.version; normalize to CompletePayload
         (payload) => {
           updateChatMsg(msgId, { status: 'applied' });
           updateChatMsg(systemMsgId, { content: 'Update applied successfully!', status: 'applied', logs: [] });
-          // Update result with new payload so preview refreshes
-          updateState({ result: payload });
+          updateState({ result: normalizeToCompletePayload(payload as UpdateCompletePayload | CompletePayload) });
           setIsUpdating(false);
         },
         // onError

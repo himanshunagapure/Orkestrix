@@ -102,6 +102,41 @@ export interface CompletePayload {
   recovery_attempts: unknown[];
 }
 
+/** Update-job complete payload: public_url and version live under `angular`. */
+export interface UpdateCompletePayload {
+  success: true;
+  screen_id: string;
+  project_id: string;
+  updated_ir_schema?: object;
+  ir_schema?: object;
+  angular?: {
+    public_url: string;
+    version: string;
+    changed_files?: unknown[];
+  };
+  public_url?: string;
+  version?: string;
+  file_count?: number;
+  recovery_attempts?: unknown[];
+}
+
+/** Normalize update-job payload to CompletePayload (use angular.public_url / angular.version when present). */
+export function normalizeToCompletePayload(
+  p: UpdateCompletePayload | CompletePayload
+): CompletePayload {
+  const angular = 'angular' in p ? p.angular : undefined;
+  return {
+    success: true,
+    project_id: p.project_id,
+    screen_id: p.screen_id,
+    ir_schema: ('updated_ir_schema' in p ? p.updated_ir_schema : undefined) ?? p.ir_schema ?? {},
+    version: angular?.version ?? p.version ?? '',
+    public_url: angular?.public_url ?? p.public_url ?? '',
+    file_count: Array.isArray(angular?.changed_files) ? angular.changed_files.length : (p.file_count ?? 0),
+    recovery_attempts: p.recovery_attempts ?? [],
+  };
+}
+
 export interface CompleteEvent {
   type: 'complete';
   payload: CompletePayload;
