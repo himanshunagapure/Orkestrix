@@ -15,6 +15,7 @@ export function getPreviewUrl(screenId: string, version: string): string {
 // API endpoints (path under context: e.g. http://localhost:5010/dev/agent/...)
 export const API_ENDPOINTS = {
   generateAngularApp: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/generate-angular-app`,
+  updateAngularScreen: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/update-angular-screen`,
   stream: (jobId: string) => `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/stream/${jobId}`,
 } as const;
 
@@ -28,6 +29,22 @@ export interface GenerateAppRequest {
   description?: string;
   org_id?: string;
   subscriber_id?: string;
+}
+
+export interface UpdateScreenRequest {
+  prompt: string;
+  project_id: string;
+  screen_id: string;
+  user_id: string;
+}
+
+// Chat message type for the evolution mode
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'system';
+  content: string;
+  status?: 'pending' | 'streaming' | 'applied' | 'failed';
+  logs?: SSEEvent[];
 }
 
 // Response types

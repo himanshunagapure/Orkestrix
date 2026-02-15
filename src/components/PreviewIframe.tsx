@@ -105,7 +105,7 @@ export function PreviewIframe({ result, className }: PreviewIframeProps) {
       </div>
 
       {/* Preview container */}
-      <div className="relative flex-1 bg-muted/20 min-h-[500px]">
+      <div className="relative flex-1 bg-muted/20">
         <AnimatePresence mode="wait">
           {isLoading && (
             <motion.div
@@ -160,7 +160,7 @@ export function PreviewIframe({ result, className }: PreviewIframeProps) {
           src={previewUrl}
           onLoad={handleLoad}
           onError={handleError}
-          className="w-full h-full min-h-[500px] border-0"
+          className="w-full h-full min-h-[400px] border-0"
           title="Generated screen preview"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         />
