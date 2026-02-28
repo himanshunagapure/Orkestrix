@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { nanoid } from 'nanoid';
 import {
   API_ENDPOINTS,
+  formatIdForApi,
   GenerateAppRequest,
   UpdateScreenRequest,
   GenerateAppResponse,
@@ -32,6 +33,7 @@ export function useJobGeneration() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const userId = "5beaabd82ac6767c86dc311c";
+  const subscriberId = import.meta.env.VITE_SUBSCRIBER_ID || "default-subscriber";
 
   // Clean up on unmount
   useEffect(() => {
@@ -116,12 +118,12 @@ export function useJobGeneration() {
     // Generate IDs
     const projectId = nanoid(10);
     const screenId = nanoid(10);
-    const userId = "5beaabd82ac6767c86dc311c";
+    const userId = nanoid(10);
 
     const requestBody: GenerateAppRequest = {
       prompt,
-      project_id: pId,
-      screen_id: sId,
+      project_id: formatIdForApi(pId, subscriberId),
+      screen_id: formatIdForApi(sId, subscriberId),
       screen_name: screenName,
       user_id: userId,
     };
@@ -180,8 +182,8 @@ export function useJobGeneration() {
 
     const requestBody: UpdateScreenRequest = {
       prompt: userMessage,
-      project_id: projectId,
-      screen_id: screenId,
+      project_id: formatIdForApi(projectId, subscriberId),
+      screen_id: formatIdForApi(screenId, subscriberId),
       user_id: userId,
     };
 
@@ -268,6 +270,24 @@ export function useJobGeneration() {
     setIsUpdating(false);
   }, []);
 
+  /** Load an existing screen for editing (chat + preview). Sets projectId, screenId, result, status complete. */
+  const loadForEdit = useCallback((projectIdArg: string, screenIdArg: string, initialResult: CompletePayload) => {
+    eventSourceRef.current?.close();
+    abortControllerRef.current?.abort();
+    setProjectId(projectIdArg);
+    setScreenId(screenIdArg);
+    setState({
+      status: 'complete',
+      jobId: null,
+      prompt: '',
+      logs: [],
+      result: initialResult,
+      error: null,
+    });
+    setChatMessages([]);
+    setIsUpdating(false);
+  }, []);
+
   const setStatus = useCallback((status: JobStatus) => {
     updateState({ status });
   }, [updateState]);
@@ -282,6 +302,7 @@ export function useJobGeneration() {
     submitUpdate,
     reconnect,
     reset,
+    loadForEdit,
     setStatus,
   };
 }

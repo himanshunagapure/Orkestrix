@@ -1,22 +1,35 @@
 // API configuration - uses environment variable for base URL
-// Backend context path (e.g. /dev when running locally - must match backend "Mounting application at context path")
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5010';
 export const API_CONTEXT_PATH = import.meta.env.VITE_API_CONTEXT_PATH || 'dev';
 
-// Liberty FS base URL for previewing generated Angular app (dist served at LIBERTY_FS_ROOT)
-// Preview URL pattern: {LIBERTY_FS_BASE_URL}{screen_id}-v{version}/
+// Liberty FS base URL for previewing generated Angular app
 export const LIBERTY_FS_BASE_URL = (import.meta.env.VITE_LIBERTY_FS_BASE_URL || 'http://localhost:843/').replace(/\/?$/, '/');
 
-/** Build the preview URL for a completed screen (iframe / open in new tab). */
+/** Format project_id or screen_id for API requests: <id>-sb-<subscriber_id> */
+export function formatIdForApi(id: string, subscriberId: string): string {
+  return `${id}-sb-${subscriberId}`;
+}
+
+/** Build the preview URL for a completed screen. */
 export function getPreviewUrl(screenId: string, version: string): string {
   return `${LIBERTY_FS_BASE_URL}${screenId}-v${version}/`;
 }
 
-// API endpoints (path under context: e.g. http://localhost:5010/dev/agent/...)
+// API endpoints
 export const API_ENDPOINTS = {
   generateAngularApp: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/generate-angular-app`,
   updateAngularScreen: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/update-angular-screen`,
   stream: (jobId: string) => `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/stream/${jobId}`,
+  uiList: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/ui-list`,
+  uiScreen: (screenId: string, projectId?: string) =>
+    `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/ui-screen/${screenId}${projectId ? `?project_id=${projectId}` : ''}`,
+  credits: (subscriberId: string, orgId?: string, userId?: string) => {
+    const params = new URLSearchParams({ subscriberId });
+    if (orgId) params.set('orgId', orgId);
+    if (userId) params.set('userId', userId);
+    return `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/credits?${params.toString()}`;
+  },
+  health: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/health`,
 } as const;
 
 // Request types
@@ -68,28 +81,10 @@ export interface GenerateAppErrorResponse {
 export type GenerateAppResponse = GenerateAppSuccessResponse | GenerateAppErrorResponse;
 
 // SSE Event types
-export interface LogEvent {
-  type: 'log';
-  message: string;
-  details?: unknown;
-}
-
-export interface RetryEvent {
-  type: 'retry';
-  message: string;
-  details?: unknown;
-}
-
-export interface WarningEvent {
-  type: 'warning';
-  message: string;
-  details?: unknown;
-}
-
-export interface ErrorEvent {
-  type: 'error';
-  message: string;
-}
+export interface LogEvent { type: 'log'; message: string; details?: unknown; }
+export interface RetryEvent { type: 'retry'; message: string; details?: unknown; }
+export interface WarningEvent { type: 'warning'; message: string; details?: unknown; }
+export interface ErrorEvent { type: 'error'; message: string; }
 
 export interface CompletePayload {
   success: true;
@@ -137,14 +132,11 @@ export function normalizeToCompletePayload(
   };
 }
 
-export interface CompleteEvent {
-  type: 'complete';
-  payload: CompletePayload;
-}
 
+
+export interface CompleteEvent { type: 'complete'; payload: CompletePayload; }
 export type SSEEvent = LogEvent | RetryEvent | WarningEvent | ErrorEvent | CompleteEvent;
 
-// Job status
 export type JobStatus = 'idle' | 'submitting' | 'streaming' | 'complete' | 'error';
 
 export interface JobState {
@@ -154,4 +146,72 @@ export interface JobState {
   logs: SSEEvent[];
   result: CompletePayload | null;
   error: string | null;
+}
+
+// --- Data fetching helpers ---
+
+export interface UIListItem {
+  _id: string;
+  project_id: string;
+  screen_id: string;
+  screen_name?: string;
+}
+
+export interface UIScreenData {
+  _id: string;
+  project_id: string;
+  screen_id: string;
+  screen_name?: string;
+  public_url?: string;
+  version?: string;
+  [key: string]: unknown;
+}
+
+export interface CreditsData {
+  credits: {
+    balance: number;
+    reserved: number;
+    total_purchased: number;
+    total_consumed: number;
+  };
+  available_credits: number;
+  limits?: unknown;
+  subscription?: unknown;
+  updatedAt?: string;
+}
+
+export async function fetchUIList(): Promise<UIListItem[]> {
+  const res = await fetch(API_ENDPOINTS.uiList);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Failed to fetch apps');
+  return json.data ?? [];
+}
+
+export async function fetchUIScreen(screenId: string, projectId?: string): Promise<UIScreenData> {
+  const res = await fetch(API_ENDPOINTS.uiScreen(screenId, projectId));
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Screen not found');
+  return json.data;
+}
+
+/** Build a minimal CompletePayload from UIScreenData for edit mode (preview + chat updates). */
+export function screenDataToCompletePayload(data: UIScreenData): CompletePayload {
+  const version = (data.version as string) ?? '';
+  return {
+    success: true,
+    project_id: data.project_id,
+    screen_id: data.screen_id,
+    ir_schema: (data.ir_schema as object) ?? {},
+    version,
+    public_url: (data.public_url as string) ?? getPreviewUrl(data.screen_id, version),
+    file_count: 0,
+    recovery_attempts: [],
+  };
+}
+
+export async function fetchCredits(subscriberId: string, orgId?: string, userId?: string): Promise<CreditsData> {
+  const res = await fetch(API_ENDPOINTS.credits(subscriberId, orgId, userId));
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Failed to fetch credits');
+  return json.data;
 }
