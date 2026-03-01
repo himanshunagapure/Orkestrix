@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ExternalLink, Copy, Check, RefreshCw, AlertCircle, Maximize2 } from 'lucide-react';
+import { ExternalLink, Check, RefreshCw, AlertCircle, Maximize2, Save, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CompletePayload, getPreviewUrl } from '@/lib/api';
@@ -9,12 +9,15 @@ import { cn } from '@/lib/utils';
 interface PreviewIframeProps {
   result: CompletePayload;
   className?: string;
+  onSave?: () => void;
+  isSaving?: boolean;
+  saveSuccess?: boolean;
+  saveError?: string | null;
 }
 
-export function PreviewIframe({ result, className }: PreviewIframeProps) {
+export function PreviewIframe({ result, className, onSave, isSaving, saveSuccess, saveError }: PreviewIframeProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   // Preview URL: LIBERTY_FS_BASE_URL + app-id (screen_id-vversion) for Angular dist
   const previewUrl = getPreviewUrl(result.screen_id, result.version);
@@ -28,16 +31,6 @@ export function PreviewIframe({ result, className }: PreviewIframeProps) {
     setIsLoading(false);
     setHasError(true);
   }, []);
-
-  const handleCopyLink = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(previewUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  }, [previewUrl]);
 
   const handleOpenNewTab = useCallback(() => {
     window.open(previewUrl, '_blank', 'noopener,noreferrer');
@@ -73,25 +66,31 @@ export function PreviewIframe({ result, className }: PreviewIframeProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCopyLink}
-            className="gap-2"
-          >
-            {copied ? (
-              <>
-                <Check className="h-4 w-4 text-success" />
-                Copied!
-              </>
+          {onSave != null && (
+            saveSuccess ? (
+              <span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1.5">
+                <Check className="h-4 w-4" /> Saved — active
+              </span>
             ) : (
-              <>
-                <Copy className="h-4 w-4" />
-                Copy Link
-              </>
-            )}
-          </Button>
-          
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onSave}
+                disabled={isSaving}
+                className="gap-2"
+              >
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Save
+              </Button>
+            )
+          )}
+          {saveError != null && saveError !== '' && (
+            <span className="text-sm text-destructive">{saveError}</span>
+          )}
           <Button
             variant="ghost"
             size="sm"

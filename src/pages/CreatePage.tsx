@@ -9,7 +9,7 @@ import { ErrorDisplay } from '@/components/ErrorDisplay';
 import { ChatPanel } from '@/components/ChatPanel';
 import { PromptDisplay } from '@/components/PromptDisplay';
 import { useJobGeneration } from '@/hooks/useJobGeneration';
-import { fetchUIScreen, screenDataToCompletePayload } from '@/lib/api';
+import { fetchUIScreen, screenDataToCompletePayload, saveScreen } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Sparkles, Layers, Zap, Code2 } from 'lucide-react';
 
@@ -28,6 +28,9 @@ export default function CreatePage() {
   const editScreenId = searchParams.get('screen_id');
   const [editLoadError, setEditLoadError] = useState<string | null>(null);
   const [editLoaded, setEditLoaded] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const {
     status, jobId, prompt, logs, result, error,
@@ -66,6 +69,14 @@ export default function CreatePage() {
     }
   }, [jobId, searchParams, setSearchParams]);
 
+  // Reset save state when the current screen/result changes
+  useEffect(() => {
+    if (result) {
+      setSaveSuccess(false);
+      setSaveError(null);
+    }
+  }, [result?.screen_id, result?.project_id]);
+
   const handleSubmit = async (promptText: string) => {
     await submitJob(promptText);
   };
@@ -77,6 +88,17 @@ export default function CreatePage() {
 
   const handleRetry = () => {
     if (prompt) submitJob(prompt);
+  };
+
+  const handleSave = async () => {
+    if (!result) return;
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+    const ok = await saveScreen({ screen_id: result.screen_id, project_id: result.project_id });
+    setIsSaving(false);
+    if (ok.success) setSaveSuccess(true);
+    else setSaveError(ok.error ?? 'Failed to save');
   };
 
   const isBuilding = status === 'submitting' || status === 'streaming';
@@ -231,6 +253,10 @@ export default function CreatePage() {
                 <PreviewIframe
                   result={result}
                   className="flex-1 rounded-none border-0 border-l-0"
+                  onSave={handleSave}
+                  isSaving={isSaving}
+                  saveSuccess={saveSuccess}
+                  saveError={saveError}
                 />
               </div>
             </div>

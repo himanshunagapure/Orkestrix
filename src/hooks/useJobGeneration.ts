@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import {
   API_ENDPOINTS,
   formatIdForApi,
+  idForUpdateRequest,
   GenerateAppRequest,
   UpdateScreenRequest,
   GenerateAppResponse,
@@ -115,17 +116,17 @@ export function useJobGeneration() {
       error: null,
     });
 
-    // Generate IDs
+    // Generate IDs for project and screen; use stable user/subscriber from env/context
     const projectId = nanoid(10);
     const screenId = nanoid(10);
-    const userId = nanoid(10);
 
     const requestBody: GenerateAppRequest = {
       prompt,
       project_id: formatIdForApi(pId, subscriberId),
       screen_id: formatIdForApi(sId, subscriberId),
-      screen_name: screenName,
+      subscriber_id: subscriberId,
       user_id: userId,
+      ...(screenName !== undefined && screenName !== '' && { screen_name: screenName }),
     };
 
     try {
@@ -182,8 +183,9 @@ export function useJobGeneration() {
 
     const requestBody: UpdateScreenRequest = {
       prompt: userMessage,
-      project_id: formatIdForApi(projectId, subscriberId),
-      screen_id: formatIdForApi(screenId, subscriberId),
+      project_id: idForUpdateRequest(projectId, subscriberId),
+      screen_id: idForUpdateRequest(screenId, subscriberId),
+      subscriber_id: subscriberId,
       user_id: userId,
     };
 
@@ -212,6 +214,7 @@ export function useJobGeneration() {
 
       const { job_id } = data as { success: true; job_id: string };
       updateChatMsg(msgId, { status: 'pending' });
+      updateState({ jobId: job_id });
 
       // Stream update progress
       startStreaming(

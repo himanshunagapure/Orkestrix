@@ -3,12 +3,16 @@ export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:50
 export const API_CONTEXT_PATH = import.meta.env.VITE_API_CONTEXT_PATH || 'dev';
 
 // Liberty FS base URL for previewing generated Angular app
-// Liberty FS base URL for previewing generated Angular app
 export const LIBERTY_FS_BASE_URL = (import.meta.env.VITE_LIBERTY_FS_BASE_URL || 'http://localhost:843/').replace(/\/?$/, '/');
 
 /** Format project_id or screen_id for API requests: <id>-sb-<subscriber_id> */
 export function formatIdForApi(id: string, subscriberId: string): string {
   return `${id}-sb-${subscriberId}`;
+}
+
+/** Use for update requests: if id already contains '-sb-', return as-is; otherwise format. */
+export function idForUpdateRequest(id: string, subscriberId: string): string {
+  return id.includes('-sb-') ? id : formatIdForApi(id, subscriberId);
 }
 
 /** Build the preview URL for a completed screen. */
@@ -17,21 +21,11 @@ export function getPreviewUrl(screenId: string, version: string): string {
 }
 
 // API endpoints
-// API endpoints
 export const API_ENDPOINTS = {
   generateAngularApp: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/generate-angular-app`,
   updateAngularScreen: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/update-angular-screen`,
   stream: (jobId: string) => `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/stream/${jobId}`,
-  uiList: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/ui-list`,
-  uiScreen: (screenId: string, projectId?: string) =>
-    `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/ui-screen/${screenId}${projectId ? `?project_id=${projectId}` : ''}`,
-  credits: (subscriberId: string, orgId?: string, userId?: string) => {
-    const params = new URLSearchParams({ subscriberId });
-    if (orgId) params.set('orgId', orgId);
-    if (userId) params.set('userId', userId);
-    return `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/credits?${params.toString()}`;
-  },
-  health: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/health`,
+  saveScreen: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/save-screen`,
   uiList: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/ui-list`,
   uiScreen: (screenId: string, projectId?: string) =>
     `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/ui-screen/${screenId}${projectId ? `?project_id=${projectId}` : ''}`,
@@ -44,23 +38,30 @@ export const API_ENDPOINTS = {
   health: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/health`,
 } as const;
 
-// Request types
+// Request types — matches /generate-angular-app: prompt, project_id, screen_id, subscriber_id, user_id required; rest optional
 export interface GenerateAppRequest {
   prompt: string;
   project_id: string;
   screen_id: string;
+  subscriber_id: string;
   user_id: string;
   screen_name?: string;
-  description?: string;
   org_id?: string;
-  subscriber_id?: string;
+  figma_link?: string;
+  figma_token?: string;
 }
 
 export interface UpdateScreenRequest {
   prompt: string;
   project_id: string;
   screen_id: string;
+  subscriber_id: string;
   user_id: string;
+}
+
+export interface SaveScreenRequest {
+  screen_id: string;
+  project_id: string;
 }
 
 // Chat message type for the evolution mode
@@ -97,10 +98,6 @@ export interface LogEvent { type: 'log'; message: string; details?: unknown; }
 export interface RetryEvent { type: 'retry'; message: string; details?: unknown; }
 export interface WarningEvent { type: 'warning'; message: string; details?: unknown; }
 export interface ErrorEvent { type: 'error'; message: string; }
-export interface LogEvent { type: 'log'; message: string; details?: unknown; }
-export interface RetryEvent { type: 'retry'; message: string; details?: unknown; }
-export interface WarningEvent { type: 'warning'; message: string; details?: unknown; }
-export interface ErrorEvent { type: 'error'; message: string; }
 
 export interface CompletePayload {
   success: true;
@@ -113,20 +110,28 @@ export interface CompletePayload {
   recovery_attempts: unknown[];
 }
 
+/** Update-job complete payload: public_url and version live under `angular`. */
 export interface UpdateCompletePayload {
   success: true;
   screen_id: string;
   project_id: string;
   updated_ir_schema?: object;
   ir_schema?: object;
-  angular?: { public_url: string; version: string; changed_files?: unknown[] };
+  angular?: {
+    public_url: string;
+    version: string;
+    changed_files?: unknown[];
+  };
   public_url?: string;
   version?: string;
   file_count?: number;
   recovery_attempts?: unknown[];
 }
 
-export function normalizeToCompletePayload(p: UpdateCompletePayload | CompletePayload): CompletePayload {
+/** Normalize update-job payload to CompletePayload (use angular.public_url / angular.version when present). */
+export function normalizeToCompletePayload(
+  p: UpdateCompletePayload | CompletePayload
+): CompletePayload {
   const angular = 'angular' in p ? p.angular : undefined;
   return {
     success: true,
@@ -200,6 +205,18 @@ export async function fetchUIScreen(screenId: string, projectId?: string): Promi
   const json = await res.json();
   if (!json.success) throw new Error(json.error || 'Screen not found');
   return json.data;
+}
+
+/** Save screen: set status from draft to active. */
+export async function saveScreen(payload: SaveScreenRequest): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch(API_ENDPOINTS.saveScreen, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json();
+  if (!res.ok) return { success: false, error: json.error || 'Failed to save screen' };
+  return json.success ? { success: true } : { success: false, error: json.error || 'Save failed' };
 }
 
 /** Build a minimal CompletePayload from UIScreenData for edit mode (preview + chat updates). */
