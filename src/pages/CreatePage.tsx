@@ -11,6 +11,8 @@ import { PromptDisplay } from '@/components/PromptDisplay';
 import { useJobGeneration } from '@/hooks/useJobGeneration';
 import { fetchUIScreen, screenDataToCompletePayload, saveScreen } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { EditorView } from '@/components/editor/EditorView';
+import { ViewModeToggle, type ViewMode } from '@/components/editor/ViewModeToggle';
 import { Sparkles, Layers, Zap, Code2 } from 'lucide-react';
 
 const features = [
@@ -31,6 +33,7 @@ export default function CreatePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('preview');
 
   const {
     status, jobId, prompt, logs, result, error,
@@ -250,14 +253,30 @@ export default function CreatePage() {
                 />
               </div>
               <div className="flex-1 flex flex-col h-[50vh] lg:h-[calc(100vh-3rem)]">
-                <PreviewIframe
-                  result={result}
-                  className="flex-1 rounded-none border-0 border-l-0"
-                  onSave={handleSave}
-                  isSaving={isSaving}
-                  saveSuccess={saveSuccess}
-                  saveError={saveError}
-                />
+                {viewMode === 'preview' ? (
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-center px-3 py-2 border-b border-border bg-card/30 shrink-0">
+                      <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      <PreviewIframe
+                        result={result}
+                        className="flex-1 rounded-none border-0 border-l-0"
+                        onSave={handleSave}
+                        isSaving={isSaving}
+                        saveSuccess={saveSuccess}
+                        saveError={saveError}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <EditorView
+                    projectId={result.project_id}
+                    screenId={result.screen_id}
+                    previewUrl={result.public_url}
+                    initialMode={viewMode}
+                  />
+                )}
               </div>
             </div>
           </motion.div>

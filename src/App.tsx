@@ -7,6 +7,7 @@ import { AppLayout } from "@/layouts/AppLayout";
 import CreatePage from "@/pages/CreatePage";
 import AppsPage from "@/pages/AppsPage";
 import AppViewPage from "@/pages/AppViewPage";
+import EditorPage from "@/pages/EditorPage";
 import SettingsPage from "@/pages/SettingsPage";
 import DocsPage from "@/pages/DocsPage";
 import NotFound from "./pages/NotFound";
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="create" element={<CreatePage />} />
             <Route path="apps" element={<AppsPage />} />
             <Route path="apps/:projectId/:screenId" element={<AppViewPage />} />
+            <Route path="apps/:projectId/:screenId/editor" element={<EditorPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="docs" element={<DocsPage />} />
           </Route>
