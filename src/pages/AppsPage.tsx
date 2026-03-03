@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ExternalLink, Loader2, AlertCircle, LayoutGrid, PlusCircle, Pencil } from 'lucide-react';
+import { ExternalLink, Loader2, AlertCircle, LayoutGrid, PlusCircle, Pencil, Code2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { fetchUIList, UIListItem } from '@/lib/api';
@@ -94,21 +94,38 @@ export default function AppsPage() {
                   <Badge variant="secondary" className="text-[10px]">{app.screen_id.slice(0, 8)}</Badge>
                 </div>
               </Link>
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="mt-3 w-full gap-2 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Link
-                  to={`/create?project_id=${app.project_id}&screen_id=${app.screen_id}`}
+              <div className="flex gap-2 mt-3">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 gap-1.5 shrink-0"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit
-                </Link>
-              </Button>
+                  <Link
+                    to={`/create?project_id=${app.project_id}&screen_id=${app.screen_id}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 gap-1.5 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Link
+                    to={`/apps/${app.project_id}/${app.screen_id}/editor`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Code2 className="h-3.5 w-3.5" />
+                    Code
+                  </Link>
+                </Button>
+              </div>
             </motion.div>
           ))}
         </div>

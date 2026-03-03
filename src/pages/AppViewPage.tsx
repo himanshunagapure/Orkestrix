@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Loader2, AlertCircle, Pencil } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Loader2, AlertCircle, Pencil, Code2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetchUIScreen, UIScreenData, getPreviewUrl } from '@/lib/api';
 
@@ -37,6 +37,13 @@ export default function AppViewPage() {
           <Button asChild variant="outline" size="sm" className="gap-2">
             <Link to={`/create?project_id=${projectId}&screen_id=${screenId}`}>
               <Pencil className="h-4 w-4" /> Edit
+            </Link>
+          </Button>
+        )}
+        {projectId && screenId && (
+          <Button asChild variant="outline" size="sm" className="gap-2">
+            <Link to={`/apps/${projectId}/${screenId}/editor`}>
+              <Code2 className="h-4 w-4" /> Editor
             </Link>
           </Button>
         )}
