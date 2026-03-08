@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { Button } from '@/components/ui/button';
-import { Save, Loader2 } from 'lucide-react';
+import { Save, Loader2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CodeEditorPaneProps {
@@ -10,6 +10,9 @@ interface CodeEditorPaneProps {
   onSave: (content: string) => Promise<void>;
   language?: string;
   className?: string;
+  /** When set, show Rebuild button next to Save (e.g. Angular mode). */
+  onRebuild?: () => void;
+  rebuilding?: boolean;
 }
 
 function inferLanguage(path: string): string {
@@ -22,7 +25,7 @@ function inferLanguage(path: string): string {
   return 'plaintext';
 }
 
-export function CodeEditorPane({ filePath, content, onSave, language, className }: CodeEditorPaneProps) {
+export function CodeEditorPane({ filePath, content, onSave, language, className, onRebuild, rebuilding }: CodeEditorPaneProps) {
   const [currentContent, setCurrentContent] = useState(content);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -59,6 +62,12 @@ export function CodeEditorPane({ filePath, content, onSave, language, className 
             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
             Save
           </Button>
+          {onRebuild != null && (
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={rebuilding} onClick={onRebuild}>
+              {rebuilding ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Rebuild
+            </Button>
+          )}
         </div>
       </div>
       <div className="flex-1 min-h-0">

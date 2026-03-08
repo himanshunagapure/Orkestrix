@@ -31,9 +31,11 @@ export default function CreatePage() {
   const [editLoadError, setEditLoadError] = useState<string | null>(null);
   const [editLoaded, setEditLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [screenStatus, setScreenStatus] = useState<'draft' | 'active'>('draft');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
+  /** Preview URL from editor Rebuild; when set, preview iframe uses this so code edits stay in sync. */
+  const [editorPreviewUrl, setEditorPreviewUrl] = useState<string | null>(null);
 
   const {
     status, jobId, prompt, logs, result, error,
@@ -72,11 +74,12 @@ export default function CreatePage() {
     }
   }, [jobId, searchParams, setSearchParams]);
 
-  // Reset save state when the current screen/result changes
+  // Reset status and editor preview when the current screen/result changes (new screen = draft)
   useEffect(() => {
     if (result) {
-      setSaveSuccess(false);
+      setScreenStatus('draft');
       setSaveError(null);
+      setEditorPreviewUrl(null);
     }
   }, [result?.screen_id, result?.project_id]);
 
@@ -93,15 +96,14 @@ export default function CreatePage() {
     if (prompt) submitJob(prompt);
   };
 
-  const handleSave = async () => {
-    if (!result) return;
+  const handleStatusChange = async (status: 'draft' | 'active') => {
+    if (!result || status !== 'active') return;
     setIsSaving(true);
     setSaveError(null);
-    setSaveSuccess(false);
     const ok = await saveScreen({ screen_id: result.screen_id, project_id: result.project_id });
     setIsSaving(false);
-    if (ok.success) setSaveSuccess(true);
-    else setSaveError(ok.error ?? 'Failed to save');
+    if (ok.success) setScreenStatus('active');
+    else setSaveError(ok.error ?? 'Failed to publish');
   };
 
   const isBuilding = status === 'submitting' || status === 'streaming';
@@ -262,9 +264,10 @@ export default function CreatePage() {
                       <PreviewIframe
                         result={result}
                         className="flex-1 rounded-none border-0 border-l-0"
-                        onSave={handleSave}
+                        previewUrlOverride={editorPreviewUrl}
+                        status={screenStatus}
+                        onStatusChange={handleStatusChange}
                         isSaving={isSaving}
-                        saveSuccess={saveSuccess}
                         saveError={saveError}
                       />
                     </div>
@@ -273,8 +276,9 @@ export default function CreatePage() {
                   <EditorView
                     projectId={result.project_id}
                     screenId={result.screen_id}
-                    previewUrl={result.public_url}
+                    previewUrl={editorPreviewUrl ?? result.public_url}
                     initialMode={viewMode}
+                    onPreviewUrlChange={setEditorPreviewUrl}
                   />
                 )}
               </div>

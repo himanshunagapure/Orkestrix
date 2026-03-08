@@ -2,6 +2,15 @@ import { API_BASE_URL, API_CONTEXT_PATH } from './api';
 
 const BASE = `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent`;
 
+/** Backend origin (scheme + host + port) for resolving relative preview URLs from the build stream. */
+const BACKEND_ORIGIN = API_BASE_URL ? new URL(API_BASE_URL).origin : '';
+
+function toAbsolutePreviewUrl(previewUrl: string): string {
+  if (!previewUrl) return previewUrl;
+  if (previewUrl.startsWith('http://') || previewUrl.startsWith('https://')) return previewUrl;
+  return `${BACKEND_ORIGIN}${previewUrl.startsWith('/') ? '' : '/'}${previewUrl}`;
+}
+
 // ---------- Types ----------
 
 export interface ScreenState {
@@ -226,6 +235,59 @@ export async function writeEditorFile(sessionId: string, filePath: string, conte
   });
   const json = await res.json();
   if (!json.success) throw new Error(json.error || 'Failed to save file');
+}
+
+// ---------- Editor build (preview after code changes) ----------
+
+export async function startEditorBuild(sessionId: string): Promise<void> {
+  const res = await fetch(`${BASE}/editor/build/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) throw new Error(json.error || 'Failed to start build');
+}
+
+export interface EditorBuildStreamCallbacks {
+  onLog?: (message: string) => void;
+}
+
+/**
+ * Open SSE stream for editor build; resolves with preview_url on success, rejects on error event.
+ */
+export function streamEditorBuild(
+  sessionId: string,
+  callbacks: EditorBuildStreamCallbacks = {},
+): Promise<{ preview_url: string }> {
+  const streamUrl = `${BASE}/editor/build/stream/${encodeURIComponent(sessionId)}`;
+  return new Promise((resolve, reject) => {
+    const es = new EventSource(streamUrl);
+    const { onLog } = callbacks;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as { type: string; data?: string; preview_url?: string };
+        if (data.type === 'log' && data.data != null) {
+          onLog?.(data.data);
+        } else if (data.type === 'close') {
+          es.close();
+          const raw = data.preview_url ?? '';
+          resolve({ preview_url: toAbsolutePreviewUrl(raw) });
+        } else if (data.type === 'error') {
+          es.close();
+          reject(new Error(data.data ?? 'Build failed'));
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      reject(new Error('Build stream connection failed'));
+    };
+  });
 }
 
 // ---------- Backend function update ----------

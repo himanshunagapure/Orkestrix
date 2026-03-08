@@ -11,6 +11,8 @@ import {
   writeEditorFile,
   getScreenFunctions,
   updateBackendFunction,
+  startEditorBuild,
+  streamEditorBuild,
   type EditorSession,
   type FileTreeNode,
   type ScreenFunction,
@@ -22,15 +24,18 @@ interface EditorViewProps {
   previewUrl?: string;
   /** If provided, this view mode will be the initial mode */
   initialMode?: ViewMode;
+  /** Called when a rebuild completes with the new preview URL (keeps preview in sync with editor). */
+  onPreviewUrlChange?: (url: string) => void;
 }
 
-export function EditorView({ projectId, screenId, previewUrl, initialMode = 'preview' }: EditorViewProps) {
+export function EditorView({ projectId, screenId, previewUrl, initialMode = 'preview', onPreviewUrlChange }: EditorViewProps) {
   const [mode, setMode] = useState<ViewMode>(initialMode);
   const [session, setSession] = useState<EditorSession | null>(null);
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
   const [functions, setFunctions] = useState<ScreenFunction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
 
   // File editor state
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
@@ -93,6 +98,23 @@ export function EditorView({ projectId, screenId, previewUrl, initialMode = 'pre
     );
   }, [selectedFn, projectId]);
 
+  const handleRebuild = useCallback(async () => {
+    if (!session) return;
+    setBuilding(true);
+    try {
+      await startEditorBuild(session.session_id);
+      const { preview_url } = await streamEditorBuild(session.session_id);
+      if (preview_url) {
+        onPreviewUrlChange?.(preview_url);
+        toast.success('Preview updated');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Build failed');
+    } finally {
+      setBuilding(false);
+    }
+  }, [session, onPreviewUrlChange]);
+
   return (
     <div className="flex flex-col h-full">
       {/* Mode toggle */}
@@ -132,8 +154,8 @@ export function EditorView({ projectId, screenId, previewUrl, initialMode = 'pre
           ) : (
             <div className="flex h-full">
               {/* File tree sidebar */}
-              <div className="w-56 shrink-0 border-r border-border bg-card/30 overflow-hidden">
-                <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">
+              <div className="w-56 shrink-0 border-r border-border bg-card/30 overflow-hidden flex flex-col">
+                <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border shrink-0">
                   Files
                 </div>
                 <FileTree tree={fileTree} selectedPath={selectedFilePath} onSelectFile={setSelectedFilePath} />
@@ -156,6 +178,8 @@ export function EditorView({ projectId, screenId, previewUrl, initialMode = 'pre
                     filePath={selectedFilePath}
                     content={fileContent}
                     onSave={handleSaveFile}
+                    onRebuild={handleRebuild}
+                    rebuilding={building}
                   />
                 )}
               </div>

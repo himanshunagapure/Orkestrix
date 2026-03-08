@@ -18,18 +18,22 @@ export default function EditorPage() {
 
   const initialTab = (searchParams.get('tab') as ViewMode) || 'angular';
 
+  const [editorPreviewUrl, setEditorPreviewUrl] = useState<string | null>(null);
+
   useEffect(() => {
     if (!screenId) return;
     setLoading(true);
     setError(null);
+    setEditorPreviewUrl(null);
     fetchUIScreen(screenId, projectId)
       .then(setScreen)
       .catch((e) => setError(e instanceof Error ? e.message : 'Screen not found'))
       .finally(() => setLoading(false));
   }, [screenId, projectId]);
 
-  const previewUrl =
+  const defaultPreviewUrl =
     screen?.public_url || (screen?.version ? getPreviewUrl(screen.screen_id, screen.version as string) : undefined);
+  const previewUrl = editorPreviewUrl ?? defaultPreviewUrl;
 
   const formattedProjectId = projectId ? idForUpdateRequest(projectId, subscriberId) : '';
 
@@ -79,6 +83,7 @@ export default function EditorPage() {
           screenId={screen.screen_id}
           previewUrl={previewUrl}
           initialMode={initialTab}
+          onPreviewUrlChange={setEditorPreviewUrl}
         />
       </div>
     </div>

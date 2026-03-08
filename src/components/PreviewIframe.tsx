@@ -1,26 +1,38 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ExternalLink, Check, RefreshCw, AlertCircle, Maximize2, Save, Loader2 } from 'lucide-react';
+import { ExternalLink, Check, RefreshCw, AlertCircle, Maximize2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { CompletePayload, getPreviewUrl } from '@/lib/api';
 import { cn } from '@/lib/utils';
+
+export type ScreenStatus = 'draft' | 'active';
 
 interface PreviewIframeProps {
   result: CompletePayload;
   className?: string;
-  onSave?: () => void;
+  /** When set (e.g. after editor Rebuild), iframe uses this URL so preview stays in sync with code edits. */
+  previewUrlOverride?: string | null;
+  /** Current status: draft (just generated) or active (saved/published). */
+  status?: ScreenStatus;
+  /** Called when user switches to Active (publish). No-op when already active or when backend doesn't support reverting to draft. */
+  onStatusChange?: (status: ScreenStatus) => void;
   isSaving?: boolean;
-  saveSuccess?: boolean;
   saveError?: string | null;
 }
 
-export function PreviewIframe({ result, className, onSave, isSaving, saveSuccess, saveError }: PreviewIframeProps) {
+export function PreviewIframe({ result, className, previewUrlOverride, status = 'draft', onStatusChange, isSaving, saveError }: PreviewIframeProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  // Preview URL: LIBERTY_FS_BASE_URL + app-id (screen_id-vversion) for Angular dist
-  const previewUrl = getPreviewUrl(result.screen_id, result.version);
+  // Use override from editor rebuild when set; otherwise default preview URL
+  const previewUrl = previewUrlOverride ?? getPreviewUrl(result.screen_id, result.version);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setHasError(false);
+  }, [previewUrl]);
 
   const handleLoad = useCallback(() => {
     setIsLoading(false);
@@ -66,27 +78,25 @@ export function PreviewIframe({ result, className, onSave, isSaving, saveSuccess
         </div>
 
         <div className="flex items-center gap-2">
-          {onSave != null && (
-            saveSuccess ? (
-              <span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1.5">
-                <Check className="h-4 w-4" /> Saved — active
+          {onStatusChange != null && (
+            <div className="flex items-center gap-2">
+              <span className={cn("text-xs font-medium", status === 'draft' ? "text-foreground" : "text-muted-foreground")}>
+                Draft
               </span>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onSave}
-                disabled={isSaving}
-                className="gap-2"
-              >
-                {isSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Save
-              </Button>
-            )
+              <Switch
+                checked={status === 'active'}
+                disabled={isSaving || status === 'active'}
+                onCheckedChange={(checked) => {
+                  if (isSaving) return;
+                  if (checked) onStatusChange('active');
+                }}
+                aria-label="Draft / Active"
+              />
+              <span className={cn("text-xs font-medium", status === 'active' ? "text-foreground" : "text-muted-foreground")}>
+                Active
+              </span>
+              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            </div>
           )}
           {saveError != null && saveError !== '' && (
             <span className="text-sm text-destructive">{saveError}</span>
@@ -155,6 +165,7 @@ export function PreviewIframe({ result, className, onSave, isSaving, saveSuccess
         </AnimatePresence>
 
         <iframe
+          key={previewUrl}
           data-preview
           src={previewUrl}
           onLoad={handleLoad}
