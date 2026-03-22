@@ -36,6 +36,10 @@ export const API_ENDPOINTS = {
     return `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/credits?${params.toString()}`;
   },
   health: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/health`,
+  projectCredentials: (projectId: string) =>
+    `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/projects/${encodeURIComponent(projectId)}/credentials`,
+  projectCredentialByName: (projectId: string, name: string) =>
+    `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/projects/${encodeURIComponent(projectId)}/credentials/${encodeURIComponent(name)}`,
 } as const;
 
 // Request types — matches /generate-angular-app: prompt, project_id, screen_id, subscriber_id, user_id required; rest optional
@@ -239,4 +243,132 @@ export async function fetchCredits(subscriberId: string, orgId?: string, userId?
   const json = await res.json();
   if (!json.success) throw new Error(json.error || 'Failed to fetch credits');
   return json.data;
+}
+
+// --- Project credentials (Phase 4) — values never returned by list/create ---
+
+export type CredentialScope = 'backend_only' | 'frontend_public';
+
+export interface CredentialUpsertBody {
+  name: string;
+  type: string;
+  service?: string;
+  scope?: CredentialScope;
+  /** Omit or leave unset to update metadata only (existing secret unchanged). */
+  value?: string | null;
+  environment?: string | null;
+}
+
+export interface ProjectCredentialMeta {
+  project_id: string;
+  name: string;
+  type: string;
+  service: string;
+  scope: string;
+  environment: string;
+  updatedAt?: string;
+  updated_at?: string;
+}
+
+export interface CredentialAuditQuery {
+  orgId?: string;
+  subscriberId?: string;
+  userId?: string;
+}
+
+/** Optional audit / ownership query params for credential POST (same idea as credits / generate). */
+export function credentialAuditParamsFromEnv(): CredentialAuditQuery {
+  const subscriberId = import.meta.env.VITE_SUBSCRIBER_ID as string | undefined;
+  const orgId = import.meta.env.VITE_ORG_ID as string | undefined;
+  const userId = import.meta.env.VITE_USER_ID as string | undefined;
+  return {
+    ...(subscriberId ? { subscriberId } : {}),
+    ...(orgId ? { orgId } : {}),
+    ...(userId ? { userId } : {}),
+  };
+}
+
+function appendCredentialAuditParams(url: URL, audit?: CredentialAuditQuery) {
+  if (!audit) return;
+  if (audit.orgId) url.searchParams.set('orgId', audit.orgId);
+  if (audit.subscriberId) url.searchParams.set('subscriberId', audit.subscriberId);
+  if (audit.userId) url.searchParams.set('userId', audit.userId);
+}
+
+function credentialErrorMessage(res: Response, json: Record<string, unknown>): string {
+  if (res.status === 503) {
+    const code = json.code ?? json.error;
+    if (code === 'credential_store_unavailable' || String(code).includes('credential'))
+      return 'Credential store is unavailable. Configure CRED_MASTER_KEY on the server.';
+    return (json.detail as string) || (json.error as string) || 'Credential store unavailable';
+  }
+  return (
+    (json.detail as string) ||
+    (json.error as string) ||
+    (json.message as string) ||
+    `Request failed (${res.status})`
+  );
+}
+
+export async function createOrUpdateCredential(
+  projectId: string,
+  body: CredentialUpsertBody,
+  audit?: CredentialAuditQuery
+): Promise<ProjectCredentialMeta> {
+  const url = new URL(API_ENDPOINTS.projectCredentials(projectId));
+  appendCredentialAuditParams(url, audit);
+  const payload: Record<string, unknown> = {
+    name: body.name,
+    type: body.type,
+    service: body.service ?? '',
+    scope: body.scope ?? 'backend_only',
+  };
+  const env = body.environment;
+  if (env !== undefined && env !== null && String(env).trim() !== '') {
+    payload.environment = env;
+  }
+  if (body.value !== undefined && body.value !== '') {
+    payload.value = body.value;
+  }
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok || json.success === false) {
+    throw new Error(credentialErrorMessage(res, json));
+  }
+  const cred = json.credential as ProjectCredentialMeta | undefined;
+  if (!cred) throw new Error('Invalid response: missing credential');
+  return cred;
+}
+
+export async function listProjectCredentials(
+  projectId: string,
+  environment?: string
+): Promise<ProjectCredentialMeta[]> {
+  const url = new URL(API_ENDPOINTS.projectCredentials(projectId));
+  if (environment) url.searchParams.set('environment', environment);
+  const res = await fetch(url.toString());
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok || json.success === false) {
+    throw new Error(credentialErrorMessage(res, json));
+  }
+  const list = json.credentials;
+  return Array.isArray(list) ? (list as ProjectCredentialMeta[]) : [];
+}
+
+export async function deleteProjectCredential(
+  projectId: string,
+  name: string,
+  environment?: string
+): Promise<void> {
+  const url = new URL(API_ENDPOINTS.projectCredentialByName(projectId, name));
+  if (environment) url.searchParams.set('environment', environment);
+  const res = await fetch(url.toString(), { method: 'DELETE' });
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok || json.success === false) {
+    throw new Error(credentialErrorMessage(res, json));
+  }
 }

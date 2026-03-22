@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ExternalLink, Loader2, AlertCircle, LayoutGrid, PlusCircle, Pencil, Code2 } from 'lucide-react';
+import { ExternalLink, Loader2, AlertCircle, LayoutGrid, PlusCircle, Pencil, Code2, MoreVertical, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { fetchUIList, UIListItem } from '@/lib/api';
 
 export default function AppsPage() {
@@ -125,6 +131,31 @@ export default function AppsPage() {
                     Code
                   </Link>
                 </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 px-2"
+                      aria-label="More actions"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuItem asChild>
+                      <Link
+                        to={`/apps/${app.project_id}/${app.screen_id}/editor?credentials=1`}
+                        className="flex cursor-pointer items-center gap-2"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                        Manage project secrets
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </motion.div>
           ))}

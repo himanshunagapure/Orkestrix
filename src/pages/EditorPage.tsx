@@ -2,16 +2,17 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { fetchUIScreen, UIScreenData, getPreviewUrl } from '@/lib/api';
+import { fetchUIScreen, UIScreenData, getPreviewUrl, idForUpdateRequest } from '@/lib/api';
 import { EditorView } from '@/components/editor/EditorView';
 import type { ViewMode } from '@/components/editor/ViewModeToggle';
-import { idForUpdateRequest } from '@/lib/api';
+import { ProjectCredentialsSheet } from '@/components/ProjectCredentialsSheet';
 
 const subscriberId = import.meta.env.VITE_SUBSCRIBER_ID || 'default-subscriber';
 
 export default function EditorPage() {
   const { projectId, screenId } = useParams<{ projectId: string; screenId: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [screen, setScreen] = useState<UIScreenData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +20,14 @@ export default function EditorPage() {
   const initialTab = (searchParams.get('tab') as ViewMode) || 'angular';
 
   const [editorPreviewUrl, setEditorPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get('credentials') !== '1') return;
+    setCredentialsOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('credentials');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!screenId) return;
@@ -84,8 +93,17 @@ export default function EditorPage() {
           previewUrl={previewUrl}
           initialMode={initialTab}
           onPreviewUrlChange={setEditorPreviewUrl}
+          onOpenCredentials={() => setCredentialsOpen(true)}
         />
       </div>
+
+      {formattedProjectId && (
+        <ProjectCredentialsSheet
+          open={credentialsOpen}
+          onOpenChange={setCredentialsOpen}
+          projectId={formattedProjectId}
+        />
+      )}
     </div>
   );
 }

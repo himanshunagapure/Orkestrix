@@ -1,5 +1,6 @@
 import { Monitor, Code2, Server } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export type ViewMode = 'preview' | 'angular' | 'backend';
 
@@ -19,19 +20,25 @@ export function ViewModeToggle({ mode, onChange, className }: Props) {
   return (
     <div className={cn('inline-flex items-center rounded-lg border border-border bg-card/80 p-0.5', className)}>
       {modes.map(({ value, label, icon: Icon }) => (
-        <button
-          key={value}
-          onClick={() => onChange(value)}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all',
-            mode === value
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-          )}
-        >
-          <Icon className="h-3.5 w-3.5" />
-          {label}
-        </button>
+        <Tooltip key={value} delayDuration={300}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => onChange(value)}
+              aria-label={label}
+              aria-pressed={mode === value}
+              className={cn(
+                'flex size-8 items-center justify-center rounded-md text-xs font-medium transition-all',
+                mode === value
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+              )}
+            >
+              <Icon className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{label}</TooltipContent>
+        </Tooltip>
       ))}
     </div>
   );

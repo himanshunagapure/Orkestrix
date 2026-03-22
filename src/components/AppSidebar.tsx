@@ -1,4 +1,4 @@
-import { PlusCircle, LayoutGrid, Settings, BookOpen, CreditCard, Loader2 } from 'lucide-react';
+import { PlusCircle, LayoutGrid, Settings, BookOpen, CreditCard, Loader2, PanelLeft } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
 import { useCredits } from '@/hooks/useCredits';
@@ -25,7 +25,7 @@ const bottomItems = [
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
+  const { state, toggleSidebar } = useSidebar();
   const collapsed = state === 'collapsed';
   const location = useLocation();
   const { data: credits, isLoading: creditsLoading } = useCredits();
@@ -115,6 +115,12 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={toggleSidebar} tooltip="Toggle sidebar">
+                <PanelLeft className="h-4 w-4 mr-2 shrink-0" />
+                {!collapsed && <span>Toggle sidebar</span>}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarFooter>
       </SidebarContent>

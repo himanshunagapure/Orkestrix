@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileTree } from './FileTree';
 import { CodeEditorPane } from './CodeEditorPane';
@@ -17,6 +17,8 @@ import {
   type FileTreeNode,
   type ScreenFunction,
 } from '@/lib/editorApi';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface EditorViewProps {
   projectId: string;
@@ -26,9 +28,18 @@ interface EditorViewProps {
   initialMode?: ViewMode;
   /** Called when a rebuild completes with the new preview URL (keeps preview in sync with editor). */
   onPreviewUrlChange?: (url: string) => void;
+  /** When set, shows a credentials control after the view mode toggle (e.g. editor route). */
+  onOpenCredentials?: () => void;
 }
 
-export function EditorView({ projectId, screenId, previewUrl, initialMode = 'preview', onPreviewUrlChange }: EditorViewProps) {
+export function EditorView({
+  projectId,
+  screenId,
+  previewUrl,
+  initialMode = 'preview',
+  onPreviewUrlChange,
+  onOpenCredentials,
+}: EditorViewProps) {
   const [mode, setMode] = useState<ViewMode>(initialMode);
   const [session, setSession] = useState<EditorSession | null>(null);
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
@@ -117,9 +128,26 @@ export function EditorView({ projectId, screenId, previewUrl, initialMode = 'pre
 
   return (
     <div className="flex flex-col h-full">
-      {/* Mode toggle */}
-      <div className="flex items-center px-3 py-2 border-b border-border bg-card/30 shrink-0">
+      {/* Mode toggle + optional credentials */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card/30 shrink-0">
         <ViewModeToggle mode={mode} onChange={setMode} />
+        {onOpenCredentials && (
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-8 shrink-0"
+                aria-label="Credentials"
+                onClick={onOpenCredentials}
+              >
+                <KeyRound className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Credentials</TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       {/* Content */}
