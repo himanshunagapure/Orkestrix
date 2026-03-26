@@ -7,7 +7,7 @@ import { EditorView } from '@/components/editor/EditorView';
 import type { ViewMode } from '@/components/editor/ViewModeToggle';
 import { ProjectCredentialsSheet } from '@/components/ProjectCredentialsSheet';
 import { RollbackModal } from '@/components/RollbackModal';
-import { initEditor } from '@/lib/editorApi';
+
 
 const subscriberId = import.meta.env.VITE_SUBSCRIBER_ID || 'default-subscriber';
 
