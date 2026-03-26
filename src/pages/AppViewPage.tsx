@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Loader2, AlertCircle, Pencil, Code2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Loader2, AlertCircle, Pencil, Code2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetchUIScreen, UIScreenData, getPreviewUrl } from '@/lib/api';
+import { RollbackModal } from '@/components/RollbackModal';
 
 export default function AppViewPage() {
   const { projectId, screenId } = useParams<{ projectId: string; screenId: string }>();
   const [screen, setScreen] = useState<UIScreenData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
 
   useEffect(() => {
     if (!screenId) return;
@@ -47,6 +49,11 @@ export default function AppViewPage() {
             </Link>
           </Button>
         )}
+        {projectId && screenId && (
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setRollbackOpen(true)}>
+            <RotateCcw className="h-4 w-4" /> Rollback
+          </Button>
+        )}
         {previewUrl && (
           <Button variant="ghost" size="sm" className="gap-2" onClick={() => window.open(previewUrl, '_blank')}>
             <ExternalLink className="h-4 w-4" /> Open in New Tab
@@ -80,6 +87,19 @@ export default function AppViewPage() {
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <p className="text-sm text-muted-foreground">No preview URL available for this screen.</p>
           </div>
+        )}
+
+        {projectId && screenId && (
+          <RollbackModal
+            open={rollbackOpen}
+            onOpenChange={setRollbackOpen}
+            projectId={projectId}
+            screenId={screenId}
+            currentVersion={screen?.version as string | undefined}
+            onRollbackComplete={(newUrl, newVer) => {
+              setScreen((prev) => prev ? { ...prev, public_url: newUrl, version: newVer } : prev);
+            }}
+          />
         )}
       </div>
     </div>
