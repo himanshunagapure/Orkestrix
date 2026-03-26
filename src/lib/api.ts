@@ -294,11 +294,6 @@ export async function fetchCredits(subscriberId: string, orgId?: string, userId?
   if (!json.success) throw new Error(json.error || 'Failed to fetch credits');
   return json.data;
 }
-  const res = await fetch(API_ENDPOINTS.credits(subscriberId, orgId, userId));
-  const json = await res.json();
-  if (!json.success) throw new Error(json.error || 'Failed to fetch credits');
-  return json.data;
-}
 
 // --- Project credentials (Phase 4) — values never returned by list/create ---
 
