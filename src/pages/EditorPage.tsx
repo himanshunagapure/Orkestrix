@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, ExternalLink, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetchUIScreen, UIScreenData, getPreviewUrl, idForUpdateRequest } from '@/lib/api';
 import { EditorView } from '@/components/editor/EditorView';
 import type { ViewMode } from '@/components/editor/ViewModeToggle';
 import { ProjectCredentialsSheet } from '@/components/ProjectCredentialsSheet';
+import { RollbackModal } from '@/components/RollbackModal';
+
 
 const subscriberId = import.meta.env.VITE_SUBSCRIBER_ID || 'default-subscriber';
 
@@ -13,9 +15,11 @@ export default function EditorPage() {
   const { projectId, screenId } = useParams<{ projectId: string; screenId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
   const [screen, setScreen] = useState<UIScreenData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editorKey, setEditorKey] = useState(0);
 
   const initialTab = (searchParams.get('tab') as ViewMode) || 'angular';
 
@@ -83,11 +87,17 @@ export default function EditorPage() {
             <ExternalLink className="h-4 w-4" /> Open Preview
           </Button>
         )}
+        {projectId && screenId && (
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setRollbackOpen(true)}>
+            <RotateCcw className="h-4 w-4" /> Rollback
+          </Button>
+        )}
       </div>
 
       {/* Editor view fills remaining space */}
       <div className="flex-1 min-h-0">
         <EditorView
+          key={editorKey}
           projectId={formattedProjectId}
           screenId={screen.screen_id}
           previewUrl={previewUrl}
@@ -96,6 +106,22 @@ export default function EditorPage() {
           onOpenCredentials={() => setCredentialsOpen(true)}
         />
       </div>
+
+      {projectId && screenId && (
+        <RollbackModal
+          open={rollbackOpen}
+          onOpenChange={setRollbackOpen}
+          projectId={projectId}
+          screenId={screenId}
+          currentVersion={screen?.version as string | undefined}
+          onRollbackComplete={(newUrl, newVer) => {
+            setScreen((prev) => prev ? { ...prev, public_url: newUrl, version: newVer } : prev);
+            setEditorPreviewUrl(newUrl);
+            // Force editor to re-init session with new version files
+            setEditorKey((k) => k + 1);
+          }}
+        />
+      )}
 
       {formattedProjectId && (
         <ProjectCredentialsSheet

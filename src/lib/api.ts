@@ -36,6 +36,9 @@ export const API_ENDPOINTS = {
     return `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/credits?${params.toString()}`;
   },
   health: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/health`,
+  screenVersions: (projectId: string, screenId: string) =>
+    `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/screen-versions?project_id=${encodeURIComponent(projectId)}&screen_id=${encodeURIComponent(screenId)}`,
+  rollbackScreen: `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/rollback-screen`,
   projectCredentials: (projectId: string) =>
     `${API_BASE_URL}/${API_CONTEXT_PATH}/aiqod-agent/agent/projects/${encodeURIComponent(projectId)}/credentials`,
   projectCredentialByName: (projectId: string, name: string) =>
@@ -236,6 +239,53 @@ export function screenDataToCompletePayload(data: UIScreenData): CompletePayload
     file_count: 0,
     recovery_attempts: [],
   };
+}
+
+// --- Screen versions & rollback (Phase 5) ---
+
+export interface ScreenVersion {
+  version: string;
+  created_at?: string | null;
+  build_status: string;
+  is_stable: boolean;
+  status?: string;
+  public_url?: string | null;
+}
+
+export interface RollbackResult {
+  success: true;
+  screen_id: string;
+  project_id: string;
+  version: string;
+  message: string;
+  rollback_cleanup: {
+    versions_removed: string[];
+    files_removed: number;
+    screen_marked: number;
+    functions_marked: number;
+    screen_deleted: number;
+    functions_deleted: number;
+  };
+}
+
+export async function listScreenVersions(projectId: string, screenId: string): Promise<ScreenVersion[]> {
+  const res = await fetch(API_ENDPOINTS.screenVersions(projectId, screenId));
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Failed to fetch versions');
+  return json.versions ?? [];
+}
+
+export async function rollbackScreen(projectId: string, screenId: string, version: string): Promise<RollbackResult> {
+  const res = await fetch(API_ENDPOINTS.rollbackScreen, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, screen_id: screenId, version }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || `Rollback failed (${res.status})`);
+  }
+  return json;
 }
 
 export async function fetchCredits(subscriberId: string, orgId?: string, userId?: string): Promise<CreditsData> {
