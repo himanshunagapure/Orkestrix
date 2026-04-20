@@ -6,7 +6,6 @@ import {
   idForUpdateRequest,
   GenerateAppRequest,
   UpdateScreenRequest,
-  GenerateAppResponse,
   SSEEvent,
   CompletePayload,
   UpdateCompletePayload,
@@ -14,7 +13,11 @@ import {
   JobStatus,
   JobState,
   ChatMessage,
+  CreditsErrorInfo,
+  isCreditsErrorMessage,
+  parseErrorResponse,
 } from '@/lib/api';
+import { generateDefaultScreenName } from '@/lib/screenName';
 
 const initialState: JobState = {
   status: 'idle',
@@ -23,6 +26,7 @@ const initialState: JobState = {
   logs: [],
   result: null,
   error: null,
+  creditsError: null,
 };
 
 export function useJobGeneration() {
@@ -55,7 +59,7 @@ export function useJobGeneration() {
     }));
   }, []);
 
-  const startStreaming = useCallback((jobId: string, onLog?: (e: SSEEvent) => void, onComplete?: (p: CompletePayload) => void, onError?: (msg: string) => void) => {
+  const startStreaming = useCallback((jobId: string, onLog?: (e: SSEEvent) => void, onComplete?: (p: CompletePayload | UpdateCompletePayload) => void, onError?: (msg: string) => void) => {
     const eventSource = new EventSource(API_ENDPOINTS.stream(jobId));
     eventSourceRef.current = eventSource;
 
@@ -71,16 +75,19 @@ export function useJobGeneration() {
             onLog?.(data);
             break;
 
-          case 'error':
+          case 'error': {
             addLog(data);
-            updateState({ status: 'error', error: data.message });
+            const creditsErr: CreditsErrorInfo | null = isCreditsErrorMessage(data.message) ? {} : null;
+            updateState({ status: 'error', error: data.message, creditsError: creditsErr });
             onError?.(data.message);
             eventSource.close();
             break;
+          }
 
           case 'complete':
             addLog(data);
-            updateState({ status: 'complete', result: data.payload });
+            if (onComplete) updateState({ status: 'complete' });
+            else updateState({ status: 'complete', result: data.payload });
             onComplete?.(data.payload);
             eventSource.close();
             break;
@@ -114,11 +121,15 @@ export function useJobGeneration() {
       logs: [],
       result: null,
       error: null,
+      creditsError: null,
     });
 
     // Generate IDs for project and screen; use stable user/subscriber from env/context
     const projectId = nanoid(10);
     const screenId = nanoid(10);
+
+    const resolvedScreenName =
+      screenName !== undefined && screenName.trim() !== '' ? screenName.trim() : generateDefaultScreenName();
 
     const requestBody: GenerateAppRequest = {
       prompt,
@@ -126,7 +137,7 @@ export function useJobGeneration() {
       screen_id: formatIdForApi(sId, subscriberId),
       subscriber_id: subscriberId,
       user_id: userId,
-      ...(screenName !== undefined && screenName !== '' && { screen_name: screenName }),
+      screen_name: resolvedScreenName,
     };
 
     try {
@@ -138,19 +149,29 @@ export function useJobGeneration() {
         signal: abortControllerRef.current.signal,
       });
 
-      const data: GenerateAppResponse = await response.json();
+      // Safely parse the body — some error responses may not be valid JSON
+      let rawData: unknown = null;
+      try { rawData = await response.json(); } catch { /* non-JSON body */ }
 
-      if (!response.ok || !data.success) {
-        const errorData = data as { success: false; error: string; required_credits?: number; available_credits?: number };
-        let errorMessage = errorData.error || 'Failed to submit job';
-        if (response.status === 402 && errorData.required_credits !== undefined) {
-          errorMessage = `Insufficient credits. Required: ${errorData.required_credits}, Available: ${errorData.available_credits ?? 0}`;
+      if (!response.ok || !(rawData as { success?: boolean })?.success) {
+        const parsed = parseErrorResponse(rawData, 'Failed to submit job');
+        let errorMessage = parsed.error;
+        let creditsErr: CreditsErrorInfo | null = null;
+
+        if (response.status === 402 || isCreditsErrorMessage(errorMessage)) {
+          creditsErr = {
+            required: parsed.required_credits,
+            available: parsed.available_credits,
+          };
+          if (parsed.required_credits !== undefined) {
+            errorMessage = `Insufficient credits. Required: ${parsed.required_credits}, Available: ${parsed.available_credits ?? 0}`;
+          }
         }
-        updateState({ status: 'error', error: errorMessage });
+        updateState({ status: 'error', error: errorMessage, creditsError: creditsErr });
         return null;
       }
 
-      const { job_id } = data as { success: true; job_id: string };
+      const { job_id } = rawData as { success: true; job_id: string };
       updateState({ status: 'streaming', jobId: job_id });
       startStreaming(job_id);
       return job_id;
@@ -198,21 +219,31 @@ export function useJobGeneration() {
         signal: abortControllerRef.current.signal,
       });
 
-      const data: GenerateAppResponse = await response.json();
+      // Safely parse the body — some error responses may not be valid JSON
+      let rawData: unknown = null;
+      try { rawData = await response.json(); } catch { /* non-JSON body */ }
 
-      if (!response.ok || !data.success) {
-        const errorData = data as { success: false; error: string; required_credits?: number; available_credits?: number };
-        let errorMessage = errorData.error || 'Failed to submit update';
-        if (response.status === 402 && errorData.required_credits !== undefined) {
-          errorMessage = `Insufficient credits. Required: ${errorData.required_credits}, Available: ${errorData.available_credits ?? 0}`;
+      if (!response.ok || !(rawData as { success?: boolean })?.success) {
+        const parsed = parseErrorResponse(rawData, 'Failed to submit update');
+        let errorMessage = parsed.error;
+        let creditsErr: CreditsErrorInfo | undefined;
+
+        if (response.status === 402 || isCreditsErrorMessage(errorMessage)) {
+          creditsErr = {
+            required: parsed.required_credits,
+            available: parsed.available_credits,
+          };
+          if (parsed.required_credits !== undefined) {
+            errorMessage = `Insufficient credits. Required: ${parsed.required_credits}, Available: ${parsed.available_credits ?? 0}`;
+          }
         }
         updateChatMsg(msgId, { status: 'failed' });
-        updateChatMsg(systemMsgId, { content: errorMessage, status: 'failed' });
+        updateChatMsg(systemMsgId, { content: errorMessage, status: 'failed', creditsError: creditsErr });
         setIsUpdating(false);
         return null;
       }
 
-      const { job_id } = data as { success: true; job_id: string };
+      const { job_id } = rawData as { success: true; job_id: string };
       updateChatMsg(msgId, { status: 'pending' });
       updateState({ jobId: job_id });
 
@@ -238,8 +269,9 @@ export function useJobGeneration() {
         },
         // onError
         (errorMsg) => {
+          const creditsErr: CreditsErrorInfo | undefined = isCreditsErrorMessage(errorMsg) ? {} : undefined;
           updateChatMsg(msgId, { status: 'failed' });
-          updateChatMsg(systemMsgId, { content: errorMsg, status: 'failed' });
+          updateChatMsg(systemMsgId, { content: errorMsg, status: 'failed', creditsError: creditsErr });
           setIsUpdating(false);
         }
       );
@@ -286,6 +318,7 @@ export function useJobGeneration() {
       logs: [],
       result: initialResult,
       error: null,
+      creditsError: null,
     });
     setChatMessages([]);
     setIsUpdating(false);

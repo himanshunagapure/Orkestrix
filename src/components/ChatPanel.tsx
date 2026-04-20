@@ -9,11 +9,15 @@ import {
   Loader2,
   Clock,
   ChevronDown,
+  CreditCard,
+  ShoppingCart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChatMessage, SSEEvent } from '@/lib/api';
+import { ChatMessage, SSEEvent, CreditsErrorInfo } from '@/lib/api';
 import { cn } from '@/lib/utils';
+
+const BUY_CREDITS_URL = import.meta.env.VITE_BUY_CREDITS_URL as string | undefined;
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -89,6 +93,53 @@ function SystemMessageLogs({ logs }: { logs?: SSEEvent[] }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function CreditsErrorCard({ info }: { info: CreditsErrorInfo }) {
+  const { available, required } = info;
+  return (
+    <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+        <CreditCard className="h-3.5 w-3.5" />
+        Insufficient Credits
+      </div>
+      {(available !== undefined || required !== undefined) && (
+        <div className="space-y-1 text-xs">
+          {available !== undefined && (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Available</span>
+              <span className={cn('font-semibold tabular-nums', available === 0 && 'text-destructive')}>
+                {available.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {required !== undefined && (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Required</span>
+              <span className="font-semibold tabular-nums text-warning">{required.toLocaleString()}</span>
+            </div>
+          )}
+          {available !== undefined && required !== undefined && (
+            <div className="flex justify-between border-t border-destructive/20 pt-1 text-muted-foreground">
+              <span>Shortfall</span>
+              <span className="font-semibold tabular-nums text-destructive">
+                {Math.max(0, required - available).toLocaleString()}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+      <Button
+        size="sm"
+        variant="destructive"
+        className="w-full gap-1.5 text-xs h-7"
+        onClick={() => window.open(BUY_CREDITS_URL || '#', BUY_CREDITS_URL ? '_blank' : '_self')}
+      >
+        <ShoppingCart className="h-3 w-3" />
+        Buy More Credits
+      </Button>
     </div>
   );
 }
@@ -186,6 +237,9 @@ export function ChatPanel({ messages, isUpdating, onSendMessage, originalPrompt,
                   <MessageStatusBadge status={msg.status} />
                 </div>
                 {msg.role === 'system' && <SystemMessageLogs logs={msg.logs} />}
+                {msg.role === 'system' && msg.status === 'failed' && msg.creditsError && (
+                  <CreditsErrorCard info={msg.creditsError} />
+                )}
               </div>
             </motion.div>
           ))}

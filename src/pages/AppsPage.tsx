@@ -1,21 +1,34 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ExternalLink, Loader2, AlertCircle, LayoutGrid, PlusCircle, Pencil, Code2, MoreVertical, KeyRound } from 'lucide-react';
+import { ExternalLink, Loader2, AlertCircle, LayoutGrid, PlusCircle, Pencil, Code2, MoreVertical, KeyRound, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { fetchUIList, UIListItem } from '@/lib/api';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { fetchUIList, updateScreenDisplayName, UIListItem } from '@/lib/api';
+import { toast } from 'sonner';
 
 export default function AppsPage() {
   const [apps, setApps] = useState<UIListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<UIListItem | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
 
   const loadApps = async () => {
     setLoading(true);
@@ -31,6 +44,36 @@ export default function AppsPage() {
   };
 
   useEffect(() => { loadApps(); }, []);
+
+  useEffect(() => {
+    if (renameTarget) setRenameValue(renameTarget.screen_name?.trim() || '');
+  }, [renameTarget]);
+
+  const handleRenameSave = async () => {
+    if (!renameTarget) return;
+    const name = renameValue.trim();
+    if (!name) {
+      toast.error('Enter a screen name');
+      return;
+    }
+    setRenameSaving(true);
+    try {
+      const ok = await updateScreenDisplayName({
+        project_id: renameTarget.project_id,
+        screen_id: renameTarget.screen_id,
+        screen_name: name,
+      });
+      if (!ok.success) {
+        toast.error(ok.error ?? 'Could not rename screen');
+        return;
+      }
+      toast.success('Screen name updated');
+      setRenameTarget(null);
+      await loadApps();
+    } finally {
+      setRenameSaving(false);
+    }
+  };
 
   return (
     <div className="p-6 max-w-5xl mx-auto w-full">
@@ -145,6 +188,13 @@ export default function AppsPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuItem
+                      className="gap-2 cursor-pointer"
+                      onSelect={() => setRenameTarget(app)}
+                    >
+                      <Type className="h-4 w-4" />
+                      Rename screen
+                    </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link
                         to={`/apps/${app.project_id}/${app.screen_id}/editor?credentials=1`}
@@ -161,6 +211,35 @@ export default function AppsPage() {
           ))}
         </div>
       )}
+
+      <Dialog open={renameTarget !== null} onOpenChange={(open) => !open && setRenameTarget(null)}>
+        <DialogContent className="sm:max-w-md" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Rename screen</DialogTitle>
+            <DialogDescription>Choose a name shown for this screen in My Apps.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="Screen name"
+              maxLength={120}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleRenameSave();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRenameTarget(null)} disabled={renameSaving}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleRenameSave()} disabled={renameSaving}>
+              {renameSaving ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PromptInput } from '@/components/PromptInput';
@@ -8,12 +8,14 @@ import { PreviewIframe } from '@/components/PreviewIframe';
 import { ErrorDisplay } from '@/components/ErrorDisplay';
 import { ChatPanel } from '@/components/ChatPanel';
 import { PromptDisplay } from '@/components/PromptDisplay';
+import { RollbackModal } from '@/components/RollbackModal';
 import { useJobGeneration } from '@/hooks/useJobGeneration';
+import { useCredits } from '@/hooks/useCredits';
 import { fetchUIScreen, screenDataToCompletePayload, saveScreen } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { EditorView } from '@/components/editor/EditorView';
 import { ViewModeToggle, type ViewMode } from '@/components/editor/ViewModeToggle';
-import { Sparkles, Layers, Zap, Code2 } from 'lucide-react';
+import { Sparkles, Layers, Zap, Code2, RotateCcw } from 'lucide-react';
 
 const features = [
   { icon: Sparkles, title: "AI-Powered", description: "Natural language to UI screens" },
@@ -36,12 +38,16 @@ export default function CreatePage() {
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
   /** Preview URL from editor Rebuild; when set, preview iframe uses this so code edits stay in sync. */
   const [editorPreviewUrl, setEditorPreviewUrl] = useState<string | null>(null);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+  const autoPublishKeyRef = useRef<string | null>(null);
 
   const {
-    status, jobId, prompt, logs, result, error,
+    status, jobId, prompt, logs, result, error, creditsError,
     chatMessages, isUpdating,
     submitJob, submitUpdate, reconnect, reset, loadForEdit,
   } = jobGeneration;
+
+  const { data: creditsData } = useCredits();
 
   useEffect(() => {
     if (initialJobId && status === 'idle') {
@@ -80,8 +86,37 @@ export default function CreatePage() {
       setScreenStatus('draft');
       setSaveError(null);
       setEditorPreviewUrl(null);
+      autoPublishKeyRef.current = null;
     }
   }, [result?.screen_id, result?.project_id]);
+
+  // If a chat update returns a new build URL/version for the same screen, drop any
+  // stale editor override so preview uses the latest backend-provided public_url.
+  useEffect(() => {
+    if (!result) return;
+    setEditorPreviewUrl(null);
+  }, [result?.public_url, result?.version]);
+
+  // Auto-publish newly generated screens so they appear in "My Apps" (ui-list excludes drafts).
+  useEffect(() => {
+    if (!result) return;
+    if (screenStatus === 'active') return;
+    if (isSaving) return;
+
+    const key = `${result.project_id}:${result.screen_id}`;
+    if (autoPublishKeyRef.current === key) return;
+    autoPublishKeyRef.current = key;
+
+    setIsSaving(true);
+    setSaveError(null);
+    saveScreen({ screen_id: result.screen_id, project_id: result.project_id })
+      .then((ok) => {
+        if (ok.success) setScreenStatus('active');
+        else setSaveError(ok.error ?? 'Failed to publish');
+      })
+      .catch((e) => setSaveError(e instanceof Error ? e.message : 'Failed to publish'))
+      .finally(() => setIsSaving(false));
+  }, [result, screenStatus, isSaving]);
 
   const handleSubmit = async (promptText: string) => {
     await submitJob(promptText);
@@ -229,7 +264,13 @@ export default function CreatePage() {
                   </div>
                 )}
                 {status === 'error' && error && (
-                  <ErrorDisplay error={error} onRetry={handleRetry} onBack={handleReset} />
+                  <ErrorDisplay
+                    error={error}
+                    onRetry={handleRetry}
+                    onBack={handleReset}
+                    creditsError={creditsError}
+                    availableCredits={creditsData?.available_credits}
+                  />
                 )}
               </div>
             </div>
@@ -257,8 +298,18 @@ export default function CreatePage() {
               <div className="flex-1 flex flex-col h-[50vh] lg:h-[calc(100vh-3rem)]">
                 {viewMode === 'preview' ? (
                   <div className="flex flex-col h-full">
-                    <div className="flex items-center px-3 py-2 border-b border-border bg-card/30 shrink-0">
+                    <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card/30 shrink-0">
                       <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => setRollbackOpen(true)}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Rollback
+                      </Button>
                     </div>
                     <div className="flex-1 min-h-0">
                       <PreviewIframe
@@ -279,10 +330,37 @@ export default function CreatePage() {
                     previewUrl={editorPreviewUrl ?? result.public_url}
                     initialMode={viewMode}
                     onPreviewUrlChange={setEditorPreviewUrl}
+                    toolbarActions={(
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => setRollbackOpen(true)}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Rollback
+                      </Button>
+                    )}
                   />
                 )}
               </div>
             </div>
+            <RollbackModal
+              open={rollbackOpen}
+              onOpenChange={setRollbackOpen}
+              projectId={result.project_id}
+              screenId={result.screen_id}
+              currentVersion={result.version}
+              onRollbackComplete={(refreshedScreen) => {
+                loadForEdit(
+                  refreshedScreen.project_id,
+                  refreshedScreen.screen_id,
+                  screenDataToCompletePayload(refreshedScreen),
+                );
+                setEditorPreviewUrl(null);
+              }}
+            />
           </motion.div>
         )}
       </AnimatePresence>

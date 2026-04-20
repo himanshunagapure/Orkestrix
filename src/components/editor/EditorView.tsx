@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Loader2, AlertCircle, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileTree } from './FileTree';
@@ -19,6 +19,7 @@ import {
 } from '@/lib/editorApi';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface EditorViewProps {
   projectId: string;
@@ -28,6 +29,8 @@ interface EditorViewProps {
   initialMode?: ViewMode;
   /** Called when a rebuild completes with the new preview URL (keeps preview in sync with editor). */
   onPreviewUrlChange?: (url: string) => void;
+  /** Optional actions rendered on the same row as the view-mode toggle. */
+  toolbarActions?: ReactNode;
   /** When set, shows a credentials control after the view mode toggle (e.g. editor route). */
   onOpenCredentials?: () => void;
 }
@@ -38,6 +41,7 @@ export function EditorView({
   previewUrl,
   initialMode = 'preview',
   onPreviewUrlChange,
+  toolbarActions,
   onOpenCredentials,
 }: EditorViewProps) {
   const [mode, setMode] = useState<ViewMode>(initialMode);
@@ -131,6 +135,7 @@ export function EditorView({
       {/* Mode toggle + optional credentials */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card/30 shrink-0">
         <ViewModeToggle mode={mode} onChange={setMode} />
+        {toolbarActions}
         {onOpenCredentials && (
           <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>
@@ -152,16 +157,20 @@ export function EditorView({
 
       {/* Content */}
       <div className="flex-1 min-h-0 relative">
-        {/* Preview */}
-        {mode === 'preview' && (
-          previewUrl ? (
-            <iframe
-              src={previewUrl}
-              className="w-full h-full border-0"
-              title="Screen preview"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-            />
-          ) : (
+        {/* Preview (keep mounted to avoid reconnect issues when switching tabs) */}
+        {previewUrl ? (
+          <iframe
+            src={previewUrl}
+            className={cn(
+              "absolute inset-0 w-full h-full border-0 transition-opacity",
+              mode === 'preview' ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+            )}
+            aria-hidden={mode !== 'preview'}
+            title="Screen preview"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          />
+        ) : (
+          mode === 'preview' && (
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
               No preview URL available
             </div>
@@ -171,16 +180,16 @@ export function EditorView({
         {/* Angular code */}
         {mode === 'angular' && (
           loading ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="relative z-10 flex items-center justify-center h-full">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-sm text-muted-foreground">
+            <div className="relative z-10 flex flex-col items-center justify-center h-full gap-2 text-sm text-muted-foreground">
               <AlertCircle className="h-6 w-6 text-destructive" />
               <span>{error}</span>
             </div>
           ) : (
-            <div className="flex h-full">
+            <div className="relative z-10 flex h-full">
               {/* File tree sidebar */}
               <div className="w-56 shrink-0 border-r border-border bg-card/30 overflow-hidden flex flex-col">
                 <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border shrink-0">
@@ -218,16 +227,16 @@ export function EditorView({
         {/* Backend functions */}
         {mode === 'backend' && (
           loading ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="relative z-10 flex items-center justify-center h-full">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-sm text-muted-foreground">
+            <div className="relative z-10 flex flex-col items-center justify-center h-full gap-2 text-sm text-muted-foreground">
               <AlertCircle className="h-6 w-6 text-destructive" />
               <span>{error}</span>
             </div>
           ) : (
-            <div className="flex h-full">
+            <div className="relative z-10 flex h-full">
               {/* Functions list sidebar */}
               <div className="w-56 shrink-0 border-r border-border bg-card/30 overflow-hidden">
                 <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border">

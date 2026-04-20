@@ -13,7 +13,16 @@ import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { listScreenVersions, rollbackScreen, fetchUIScreen, type ScreenVersion } from '@/lib/api';
+import {
+  listScreenVersions,
+  rollbackScreen,
+  fetchUIScreen,
+  getScreenPublicUrl,
+  type RollbackResult,
+  type ScreenVersion,
+  type UIScreenData,
+} from '@/lib/api';
+import { getScreenState } from '@/lib/editorApi';
 import { toast } from 'sonner';
 
 interface RollbackModalProps {
@@ -23,7 +32,7 @@ interface RollbackModalProps {
   screenId: string;
   currentVersion?: string;
   /** Called after successful rollback with refreshed screen data */
-  onRollbackComplete?: (newPublicUrl: string, newVersion: string) => void;
+  onRollbackComplete?: (screen: UIScreenData, rollback: RollbackResult) => void;
 }
 
 export function RollbackModal({
@@ -47,9 +56,13 @@ export function RollbackModal({
     setSelected('');
     listScreenVersions(projectId, screenId)
       .then((v) => {
-        // Sort newest first
-        const sorted = [...v].sort((a, b) => b.version.localeCompare(a.version));
+        // Hide deleted versions if backend still returns them, and sort newest first.
+        const sorted = [...v]
+          .filter((item) => item.status !== 'deleted')
+          .sort((a, b) => b.version.localeCompare(a.version));
         setVersions(sorted);
+        const firstEligible = sorted.find(canRollback);
+        setSelected(firstEligible?.version ?? '');
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load versions'))
       .finally(() => setLoading(false));
@@ -63,19 +76,39 @@ export function RollbackModal({
     setRolling(true);
     try {
       const result = await rollbackScreen(projectId, screenId, selected);
-      toast.success(result.message || 'Rollback successful');
+      const [refreshed, screenState] = await Promise.all([
+        fetchUIScreen(screenId, projectId),
+        getScreenState(projectId, screenId).catch(() => null),
+      ]);
+      const normalizedScreen: UIScreenData = screenState?.ir_schema
+        ? { ...refreshed, ir_schema: screenState.ir_schema }
+        : refreshed;
 
-      // Refetch screen to get new public_url
-      const refreshed = await fetchUIScreen(screenId, projectId);
-      const newUrl = (refreshed.public_url as string) ?? '';
-      const newVer = (refreshed.version as string) ?? selected;
-      onRollbackComplete?.(newUrl, newVer);
+      const removedCount = result.rollback_cleanup?.versions_removed?.length ?? 0;
+      toast.success(
+        removedCount > 0
+          ? `${result.message || 'Rollback successful'} Removed ${removedCount} newer version${removedCount === 1 ? '' : 's'}.`
+          : (result.message || 'Rollback successful'),
+      );
+
+      onRollbackComplete?.(normalizedScreen, result);
       onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Rollback failed');
     } finally {
       setRolling(false);
     }
+  };
+
+  const previewVersion = (version: ScreenVersion) => {
+    const url = getScreenPublicUrl({
+      _id: `${projectId}:${screenId}:${version.version}`,
+      project_id: projectId,
+      screen_id: screenId,
+      public_url: version.public_url ?? undefined,
+      version: version.version,
+    });
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const formatVersion = (v: string) => {
@@ -120,11 +153,15 @@ export function RollbackModal({
           )}
 
           {!loading && !error && versions.length > 0 && (
-            <ScrollArea className="max-h-72">
-              <RadioGroup value={selected} onValueChange={setSelected} className="gap-0">
+            <ScrollArea className="h-[min(55vh,22rem)] w-full rounded-md border border-border">
+              <RadioGroup value={selected} onValueChange={setSelected} className="gap-0 p-1">
                 {versions.map((v) => {
                   const isCurrent = v.version === currentVersion;
                   const eligible = canRollback(v);
+                  const label =
+                    v.version_label && String(v.version_label).trim() !== ''
+                      ? String(v.version_label).trim()
+                      : null;
                   return (
                     <label
                       key={v.version}
@@ -138,15 +175,20 @@ export function RollbackModal({
                         id={`v-${v.version}`}
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {label && (
+                            <Badge variant="outline" className="shrink-0 font-mono text-xs px-2 py-0">
+                              {label}
+                            </Badge>
+                          )}
                           <Label
                             htmlFor={`v-${v.version}`}
-                            className="text-sm font-mono cursor-inherit"
+                            className="text-sm font-mono cursor-inherit truncate"
                           >
                             {formatVersion(v.version)}
                           </Label>
                           {isCurrent && (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
                               Current
                             </Badge>
                           )}
@@ -162,6 +204,31 @@ export function RollbackModal({
                             <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                               <CheckCircle2 className="h-3 w-3" /> stable
                             </span>
+                          )}
+                          {v.status && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {v.status}
+                            </span>
+                          )}
+                          {v.created_at && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {new Date(v.created_at).toLocaleString()}
+                            </span>
+                          )}
+                          {v.public_url && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1.5 text-[10px]"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                previewVersion(v);
+                              }}
+                            >
+                              Preview
+                            </Button>
                           )}
                         </div>
                       </div>

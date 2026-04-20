@@ -1,0 +1,337 @@
+🔁 Post-Generation Iteration Mode (Chat-Based UI Evolution)
+
+After the initial screen generation is completed successfully (i.e., SSE stream receives a "complete" event from /generate-angular-app), the UI should transition into an Interactive Evolution Mode.
+
+This mode enables the user to refine, enhance, or modify the generated screen using a conversational chat interface powered by:
+
+POST /aiqod-agent/agent/update-angular-screen
+
+This endpoint follows the same async job model and SSE streaming behavior as the generation endpoint.
+
+---
+
+# 🧠 New UX Flow
+
+Once the first screen is generated:
+
+### Update the existing layout with:
+
+## Two-panel Layout
+
+| Left Panel                     | Right Panel               |
+
+| ------------------------------ | ------------------------- |
+
+| 💬 Chat-based update interface | 🖥 Live Preview (iframe) |
+
+---
+
+# 🧩 LEFT PANEL — Conversational Update Interface
+
+Convert the left prompt panel into a chat-style interface.
+
+This enables the user to evolve the UI using natural language such as:
+
+* "Change theme to dark mode"
+
+* "Add a submit button"
+
+* "Make this mobile friendly" etc.
+
+---
+
+## Chat Behavior
+
+### Conversation Structure
+
+Maintain a message list:
+
+type Message = {
+
+  id: string
+
+  role: "user" | "system"
+
+  content: string
+
+  status?: "pending" | "applied" | "failed"
+
+}
+
+Show:
+
+* Past updates
+
+* Pending update
+
+* Applied updates
+
+This mirrors backend-supported chat_history behavior.
+
+---
+
+## Sending an Update
+
+When the user submits a new chat message:
+
+### 1️⃣ Call Update Endpoint
+
+POST /aiqod-agent/agent/update-angular-screen
+
+Body:
+
+{
+
+  prompt: <user message>,
+
+  project_id: existing_project_id,
+
+  screen_id: existing_screen_id
+
+}
+
+Same identifiers from original generation must be reused.
+
+---
+
+### 2️⃣ Handle Response
+
+Response returns:
+
+{
+
+  success: true,
+
+  job_id: string
+
+}
+
+---
+
+### 3️⃣ Stream Update Progress
+
+Open SSE stream:
+
+GET /aiqod-agent/agent/stream/{job_id}
+
+Just like generation.
+
+Append logs to chat feed in real-time.
+
+---
+
+### 4️⃣ Handle Terminal Events
+
+| Event        | Behavior                                                   |
+
+| ------------ | ---------------------------------------------------------- |
+
+| "log"      | Show inline assistant activity (e.g. "Updating layout...") |
+
+| "retry"    | Show retry indicator                                       |
+
+| "warning"  | Show non-blocking issue                                    |
+
+| "error"    | Mark message as failed                                     |
+
+| "complete" | Update preview iframe                                      |
+
+---
+
+## Chat UI Rules
+
+* Disable input while update job is running
+
+* Show typing / processing indicator
+
+* Show update status badge:
+
+  * Applying...
+
+  * Applied
+
+  * Failed
+
+---
+
+# 🖥 RIGHT PANEL — Enhanced Preview
+
+Make preview the primary visual focus.
+
+### Changes required:
+
+* Increase iframe width to ~65–75%
+
+* Reduce left panel width accordingly
+
+* Keep logs visible but secondary
+
+Suggested layout:
+
+| Chat Panel (35%) | Preview Panel (65%) |
+
+---
+
+## Preview Behavior
+
+On "complete" event from update stream:
+
+Update iframe:
+
+iframe.src = payload.angular.public_url || payload.public_url
+
+Preserve:
+
+* Smooth transition
+
+* Loading overlay while refreshing
+
+---
+
+## Preview Actions
+
+Add:
+
+* 🔗 Open in new tab
+
+* 📋 Copy preview link
+
+* 🔄 Refresh preview
+
+---
+
+# 🔄 Update Lifecycle
+
+Full loop:
+
+User chats →
+
+POST update →
+
+Receive job_id →
+
+Open SSE →
+
+Stream logs →
+
+Receive complete →
+
+Refresh preview →
+
+Append chat history →
+
+Ready for next update
+
+---
+
+# 🧠 Context Persistence
+
+Frontend must persist:
+
+* project_id
+
+* screen_id
+
+* preview_url
+
+* chat history
+
+Store in:
+
+* React state
+
+* URL query
+
+* Local storage (optional)
+
+So refresh does not break session.
+
+---
+
+# 🧯 Error Handling
+
+Handle:
+
+### 400
+
+Missing prompt → show inline validation
+
+### 402
+
+Show:
+
+Insufficient credits for update
+
+Required: X
+
+Available: Y
+
+### 404
+
+Screen not found → show "Session expired"
+
+---
+
+# ⏳ Update Time Messaging
+
+Show microcopy:
+
+> Updates may take 1–5 minutes depending on complexity.
+
+---
+
+# ♻️ Reuse Existing Streaming Logic
+
+The update endpoint uses the same SSE stream format as generation:
+
+* No new polling logic required
+
+* No new status endpoints
+
+Just reuse:
+
+EventSource(baseUrl + "/aiqod-agent/agent/stream/" + job_id)
+
+---
+
+# 🧩 New Components to Add
+
+### ChatPanel
+
+Handles:
+
+* Chat messages
+
+* Update submission
+
+* Streaming logs
+
+### UpdateStreamHandler
+
+Reusable SSE handler for update jobs
+
+### PreviewFrame
+
+Enhanced iframe viewer with refresh state
+
+### UpdateStatusBadge
+
+Shows update progress per message
+
+---
+
+# 🎯 Resulting Product Experience
+
+User flow becomes:
+
+Generate screen →
+
+See preview →
+
+Chat to improve →
+
+AI updates →
+
+Preview refreshes →
+
+Repeat

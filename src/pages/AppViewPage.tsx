@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Loader2, AlertCircle, Pencil, Code2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { fetchUIScreen, UIScreenData, getPreviewUrl } from '@/lib/api';
+import { fetchUIScreen, UIScreenData, getScreenPublicUrl, getScreenVersion } from '@/lib/api';
 import { RollbackModal } from '@/components/RollbackModal';
 
 export default function AppViewPage() {
@@ -22,8 +22,7 @@ export default function AppViewPage() {
       .finally(() => setLoading(false));
   }, [screenId, projectId]);
 
-  const previewUrl = screen?.public_url
-    || (screen?.version ? getPreviewUrl(screen.screen_id, screen.version as string) : null);
+  const previewUrl = screen ? getScreenPublicUrl(screen) : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -95,9 +94,9 @@ export default function AppViewPage() {
             onOpenChange={setRollbackOpen}
             projectId={projectId}
             screenId={screenId}
-            currentVersion={screen?.version as string | undefined}
-            onRollbackComplete={(newUrl, newVer) => {
-              setScreen((prev) => prev ? { ...prev, public_url: newUrl, version: newVer } : prev);
+            currentVersion={screen ? getScreenVersion(screen) : undefined}
+            onRollbackComplete={(refreshedScreen) => {
+              setScreen(refreshedScreen);
             }}
           />
         )}

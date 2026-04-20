@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle, ExternalLink, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { fetchUIScreen, UIScreenData, getPreviewUrl, idForUpdateRequest } from '@/lib/api';
+import { fetchUIScreen, UIScreenData, getScreenPublicUrl, getScreenVersion, idForUpdateRequest } from '@/lib/api';
 import { EditorView } from '@/components/editor/EditorView';
 import type { ViewMode } from '@/components/editor/ViewModeToggle';
 import { ProjectCredentialsSheet } from '@/components/ProjectCredentialsSheet';
@@ -44,8 +44,7 @@ export default function EditorPage() {
       .finally(() => setLoading(false));
   }, [screenId, projectId]);
 
-  const defaultPreviewUrl =
-    screen?.public_url || (screen?.version ? getPreviewUrl(screen.screen_id, screen.version as string) : undefined);
+  const defaultPreviewUrl = screen ? getScreenPublicUrl(screen) : undefined;
   const previewUrl = editorPreviewUrl ?? defaultPreviewUrl;
 
   const formattedProjectId = projectId ? idForUpdateRequest(projectId, subscriberId) : '';
@@ -113,10 +112,10 @@ export default function EditorPage() {
           onOpenChange={setRollbackOpen}
           projectId={projectId}
           screenId={screenId}
-          currentVersion={screen?.version as string | undefined}
-          onRollbackComplete={(newUrl, newVer) => {
-            setScreen((prev) => prev ? { ...prev, public_url: newUrl, version: newVer } : prev);
-            setEditorPreviewUrl(newUrl);
+          currentVersion={getScreenVersion(screen)}
+          onRollbackComplete={(refreshedScreen) => {
+            setScreen(refreshedScreen);
+            setEditorPreviewUrl(null);
             // Force editor to re-init session with new version files
             setEditorKey((k) => k + 1);
           }}

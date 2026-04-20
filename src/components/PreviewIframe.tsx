@@ -4,10 +4,28 @@ import { ExternalLink, Check, RefreshCw, AlertCircle, Maximize2, Loader2 } from 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { CompletePayload, getPreviewUrl } from '@/lib/api';
+import { CompletePayload, resolvePreviewUrl } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 export type ScreenStatus = 'draft' | 'active';
+
+function withVersionCacheBust(url: string, version?: string): string {
+  if (!version || version.trim() === '') return url;
+
+  try {
+    const parsed = new URL(url, window.location.origin);
+    parsed.searchParams.set('v', version);
+
+    if (/^https?:\/\//i.test(url)) {
+      return parsed.toString();
+    }
+
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    const joiner = url.includes('?') ? '&' : '?';
+    return `${url}${joiner}v=${encodeURIComponent(version)}`;
+  }
+}
 
 interface PreviewIframeProps {
   result: CompletePayload;
@@ -26,8 +44,14 @@ export function PreviewIframe({ result, className, previewUrlOverride, status = 
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  // Use override from editor rebuild when set; otherwise default preview URL
-  const previewUrl = previewUrlOverride ?? getPreviewUrl(result.screen_id, result.version);
+  // Prefer editor override, then backend public_url, then local computed fallback.
+  // Always include the current build version so updated bundles are fetched fresh.
+  const rawPreviewUrl = resolvePreviewUrl(
+    previewUrlOverride ?? result.public_url,
+    result.screen_id,
+    result.version,
+  );
+  const previewUrl = withVersionCacheBust(rawPreviewUrl, result.version);
 
   useEffect(() => {
     setIsLoading(true);

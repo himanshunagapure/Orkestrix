@@ -1,0 +1,999 @@
+Role:
+You are a senior frontend engineer building a production-ready SaaS frontend for an AI Screen Builder application. Build beautiful modern user friendly website.
+
+Product Overview
+
+The product allows users to:
+Enter a natural language prompt describing UI screens
+Submit the prompt to backend
+Backend runs an AI generation job (8–10 minutes)
+Frontend shows progress
+Final result is generated UI code/screens
+This is NOT a synchronous API.
+The backend returns a job_id immediately.
+
+Tech Stack Requirements
+Framework: React + Next.js
+Language: TypeScript
+Styling: Tailwind CSS
+UI quality: Clean, modern, beautiful, SaaS-like
+
+Backend API Contract
+Base path: All endpoints are under /aiqod-agent/agent (e.g. baseUrl + "/aiqod-agent/agent/..."). Use env var for base URL (e.g. NEXT_PUBLIC_API_URL).
+
+1) Submit job
+POST /aiqod-agent/agent/generate-angular-app
+
+Request body (JSON):
+{
+  "prompt": string,           // required: natural language description of the UI
+  "project_id": string,       // required: project identifier (e.g. generate UUID if new)
+  "screen_id": string,        // required: screen identifier (e.g. generate UUID if new)
+  "screen_name": string,      // optional: display name for the screen
+  "description": string,       // optional
+  "orgId": string,            // optional: for credit/billing (some deployments require it)
+  "subscriberId": string,     // optional
+  "userId": string            // optional
+}
+
+Success response (200):
+{
+  "success": true,
+  "job_id": string
+}
+
+Error responses:
+- 400: Missing prompt, or missing project_id/screen_id → detail: { "success": false, "error": "..." }
+- 402: Insufficient credits → detail: { "success": false, "error": "...", "code": "...", "required_credits", "available_credits", "estimate": {...} }
+- 500: Server error → detail: { "success": false, "error": "..." }
+
+2) Job progress and result (Server-Sent Events — no separate status or result endpoints)
+GET /aiqod-agent/agent/stream/{job_id}
+
+- Use EventSource(baseUrl + "/aiqod-agent/agent/stream/" + job_id) or fetch() with read of stream.
+- Response: text/event-stream. Each event is a line: data: <JSON>\n\n
+- Parse JSON; all events have a "type" field.
+
+Event types (use these to drive a live log feed on the frontend):
+- "log"   → { "type": "log",   "message": string, "details": any } — progress messages (e.g. "Generating IR Schema...", "Starting Angular App generation..."); append to live log panel.
+- "retry" → { "type": "retry", "message": string, "details": any }; append to live log panel with distinct style.
+- "warning" → { "type": "warning", "message": string, "details": any }; append to live log panel with distinct style.
+- "error" → { "type": "error", "message": string } — terminal; job failed
+- "complete" → { "type": "complete", "payload": object } — terminal; job succeeded. Payload shape:
+
+Complete payload (when type === "complete"):
+{
+  "success": true,
+  "project_id": string,
+  "screen_id": string,
+  "ir_schema": object,
+  "version": string,
+  "public_url": string,   // use this URL for iframe preview of the generated screen
+  "file_count": number,
+  "recovery_attempts": array
+}
+
+- Connection closes after the terminal event (complete or error). Do not poll GET /api/status or GET /api/result; they do not exist.
+
+Required Frontend Pages / Components
+
+1️⃣ Landing / Builder Page
+App name header (AI Screen Builder)
+Large textarea for user prompt
+Example placeholder prompt
+“Generate” button
+Button disabled after submit
+On submit:
+- Generate project_id and screen_id (e.g. crypto.randomUUID() or UUID v4) for the new job.
+- Call POST /aiqod-agent/agent/generate-angular-app with body: { prompt, project_id, screen_id } (and optionally screen_name, description; orgId/subscriberId/userId if your deployment requires them).
+- Read response: on success use response.job_id; handle 400/402/500 and show errors (e.g. 402 for insufficient credits).
+
+Take to next page:
+Divide in 2 sections: left side shows user-entered prompt; right side shows status and then preview (see below). After submit, open the SSE stream for that job_id (do not navigate away until stream ends or user cancels).
+
+2️⃣ Job Progress and Result (same flow via SSE)
+- Connect to GET /aiqod-agent/agent/stream/{job_id} using EventSource (or fetch + stream). Base URL from env (e.g. NEXT_PUBLIC_API_URL).
+- For each SSE event: parse data as JSON; switch on type:
+  - "log" / "retry" / "warning": append to a live log feed (see Live logs below) (e.g. “Analyzing requirements…”, “Generating layout…”, “Finalizing code…”).
+  - "error": show error message and stop; do not expect a result.
+  - "complete": use event.payload; show generated screen preview in an iframe with payload.public_url.
+- Show an animated progress indicator while the stream is open and type is not yet "complete" or "error".
+- No separate “status” or “result” HTTP endpoints — everything comes from the stream.
+
+Live logs (required):
+- Display a live log panel/feed on the right side (or below the progress indicator) that shows each streamed event as it arrives.
+- For every event with type "log", "retry", or "warning", append one line (or row) to this feed: show the message; optionally show type (e.g. badge for retry/warning) and optional details.
+- Logs must appear in real time (append as events are received); use a scrollable container (e.g. max-height + overflow-auto) and auto-scroll to the latest line so the user always sees the newest log.
+- Style warnings and retries so they are visually distinct from normal log lines (e.g. different color or icon). This gives users visibility into generation progress and any retries or warnings from the backend.
+
+3️⃣ Result / Preview
+- When SSE event type is "complete", display the preview in an iframe with src = payload.public_url. Optionally show payload.version, payload.file_count, or other payload fields.
+
+UX / UI Guidelines
+Minimalist SaaS design
+Clear loading states
+No page freezes
+Mobile responsive
+Friendly microcopy
+Error boundaries
+
+Non-Functional Requirements
+No hardcoded backend URLs. Use a single base URL from env (e.g. NEXT_PUBLIC_API_URL). All API paths are relative to that base: e.g. submit = baseUrl + "/aiqod-agent/agent/generate-angular-app", stream = baseUrl + "/aiqod-agent/agent/stream/" + job_id. EventSource(streamUrl) must use the same origin or a CORS-enabled backend.
+Code should be modular and readable
+Components should be reusable
+Add comments where logic is non-obvious
+Handle stream errors (network drop, 404 for unknown job_id) and show user-friendly messages
+
+MVP Additions (include in the build)
+- Environment: Provide .env.example with NEXT_PUBLIC_API_URL (and any other required vars). README must state how to set env and run (e.g. npm run dev).
+- Empty / initial state: When no job has been submitted, show a clear empty state (e.g. “Describe your screen and click Generate”) and optional example prompts the user can click to fill the textarea.
+- URL state: After submit, put job_id in the URL (e.g. query ?job_id=... or path /build/[job_id]) so refreshing the page can show “Job in progress” or “Job not found” instead of losing context. Optionally reconnect to the stream if the job is still valid (if backend supports it) or show a message with a “Start over” action.
+- “Start over” / New generation: A visible button or link to go back to the builder (clear prompt + job state, allow a new generation). Do not require a full page reload if the app is SPA.
+- Preview actions: On the result view, provide “Open in new tab” for the iframe’s public_url and optionally “Copy link” so users can share or open the generated app.
+- Iframe loading: Handle iframe load error (e.g. public_url unreachable) with a short message and optionally “Retry” or “Open in new tab”.
+- Time expectation: Somewhere near the progress area, show a short note that generation typically takes several minutes (e.g. “Generation usually takes 5–10 minutes”) so users do not think the app is stuck.
+- 402 (credits) UX: When the API returns 402, show the error message and, if the response includes available_credits / required_credits or estimate, display them in plain language (e.g. “Insufficient credits. Required: X, Available: Y”).
+- Basic accessibility: Use semantic HTML (header, main, section, button), ensure “Generate” and key actions are focusable and work with keyboard; add aria-live for the live log area so screen readers announce new log lines.
+
+Deliverables Expected from You
+
+Full frontend code
+Folder structure
+Main pages and components
+API integration logic
+Tailwind styling
+Ready-to-run project
+
+Now generate the complete frontend codebase accordingly.
+
+================================================================================
+PHASE 2 PLAN — Sidebar, Apps List, Credits, Settings, Documentation
+================================================================================
+
+Overview
+--------
+Phase 2 adds a persistent sidebar to the app with navigation and credits, plus new pages: Create app (builder), Apps list (my apps), Settings, and Documentation. The sidebar is visible across the app and drives routing.
+
+Sidebar Items (opens left to right)
+-----------------------------
+1. Create app — navigates to main builder page (prompt input → generate flow).
+2. Apps — navigates to “My apps” page (list of created apps; click to open).
+3. [Spacer / flex-grow]
+4. Credits — at bottom: consumed vs remaining (from backend when available).
+5. Settings — navigates to Settings page.
+6. Documentation — navigates to Documentation page.
+
+Backend Endpoints to Use (from backend/agent_new.py)
+----------------------------------------------------
+
+Already available:
+• POST /aiqod-agent/agent/generate-angular-app
+  - Submit new generation (prompt, project_id, screen_id, screen_name, etc.).
+  - 402 response includes: available_credits, required_credits, estimate (use for credits UX).
+
+• GET /aiqod-agent/agent/stream/{job_id}
+  - SSE for job progress and result; complete payload includes public_url for preview.
+
+• GET /aiqod-agent/agent/credits?subscriberId=...&orgId=...&userId=...
+  - Required query: subscriberId. Optional: orgId, userId.
+  - Returns wallet snapshot from users_wallet:
+    - data.credits (balance, reserved, total_purchased, total_consumed, etc.)
+    - data.available_credits = balance - reserved
+    - data.limits, data.subscription, data.updatedAt
+  - Use this to power the sidebar credits block (consumed vs left/available).
+
+• GET /aiqod-agent/agent/ui-list
+  - Returns { success, data } where data = array of { _id, project_id, screen_id, screen_name }.
+  - One row per screen (latest non-draft). Use for “Apps” list.
+
+• GET /aiqod-agent/agent/ui-screen/{screen_id}?project_id=...
+  - Returns { success, data } with full screen record.
+  - Use data.public_url (or equivalent) to open/preview an app in iframe or new tab.
+
+• GET /aiqod-agent/agent/health
+  - Optional: health check for status indicator.
+
+Credits (now supported):
+• Sidebar should call GET /aiqod-agent/agent/credits (with subscriberId) on initial load and show:
+  - Consumed: data.credits.total_consumed
+  - Left/Available: data.available_credits (or show Balance vs Reserved)
+• If POST generate-angular-app returns 402, show required vs available and then refresh credits by calling /credits again (to keep sidebar consistent).
+
+Implementation Plan (Frontend)
+------------------------------
+
+1) Layout and routing
+   - Introduce an app layout that includes the sidebar and an outlet for pages.
+   - Routes:
+     - / or /create → Builder (main page: prompt input, then job progress + preview).
+     - /apps → Apps list page (table or cards of user’s apps).
+     - /apps/[projectId]/[screenId] or /preview?project_id=...&screen_id=... → Single app view (iframe with public_url or open in new tab).
+     - /settings → Settings page (placeholder or minimal settings).
+     - /docs or /documentation → Documentation page (placheolder content).
+   - Sidebar is always visible in this layout (optional: collapse on small screens with hamburger).
+
+2) Sidebar component
+   - Fixed or sticky sidebar (e.g. left), full height.
+   - Nav items: “Create app” (→ / or /create), “Apps” (→ /apps).
+   - At bottom: Credits block, then “Settings”, “Documentation”.
+   - Credits block:
+     - Call GET /aiqod-agent/agent/credits?subscriberId=... (subscriberId from auth context or env for dev).
+     - Display “Consumed: total_consumed” and “Left: available_credits” (and optionally Balance/Reserved detail in tooltip or secondary text).
+   - Use Next.js Link for client-side navigation; active state for current route.
+
+3) Create app (builder) page
+   - Already in Phase 1: prompt textarea, Generate button, then job progress (SSE) and preview (iframe with public_url on complete).
+   - Ensure “Create app” in sidebar links here; this becomes the main landing for “create new screen”.
+
+4) Apps list page
+   - On load: GET /aiqod-agent/agent/ui-list.
+   - Render list (cards or table) with screen_name, project_id, screen_id.
+   - Each row/card: “Open” or title click → fetch GET /aiqod-agent/agent/ui-screen/{screen_id}?project_id={project_id}, then open data.public_url in new tab or navigate to an internal preview route that shows iframe with public_url.
+   - Empty state: “No apps yet. Create your first app from Create app.”
+
+5) Single app view (open app)
+   - Option A: New tab with public_url (simplest).
+   - Option B: Route like /apps/[projectId]/[screenId]: page fetches ui-screen, then renders iframe with public_url (and “Open in new tab” link).
+   - Prefer Option B for in-app UX; Option A for “Open in new tab” button.
+
+6) Settings page
+   - Placeholder page with title “Settings” and short copy (e.g. “Settings and preferences will be available here.”).
+   - Later: API base URL, theme, subscriber id for dev, etc.
+
+7) Documentation page
+   - Placeholder page “Documentation” with link(s) to external docs (e.g. product docs, API usage).
+   - Or static content: how to create an app, how credits work, link to backend API docs.
+
+8) Credits in sidebar
+   - Component: e.g. “Credits” with two lines: “Consumed: X”, “Left: Y” (or “Balance: Z”).
+   - Fetch on layout mount + after generation completes/fails (especially on 402) to keep sidebar current.
+   - Use data.available_credits as “Left” and data.credits.total_consumed as “Consumed”.
+
+9) Auth / identity (subscriberId / userId)
+   - Phase 1 may not have auth; generate-angular-app accepts optional orgId, subscriberId, userId.
+   - For Phase 2: if no auth, use a default or env-based subscriberId for credits; document in README.
+   - When auth is added later, plug in subscriberId/userId/orgId from auth context into both generate-angular-app and /credits.
+
+11) API module additions
+   - uiList(): GET baseUrl + "/aiqod-agent/agent/ui-list".
+   - uiScreen(screenId, projectId?): GET baseUrl + "/aiqod-agent/agent/ui-screen/" + screenId + (projectId ? "?project_id=" + projectId : "").
+   - getCredits(subscriberId, orgId?, userId?): GET baseUrl + "/aiqod-agent/agent/credits?subscriberId=..." and return data (credits + available_credits + limits + subscription).
+
+12) Error and loading
+   - Apps list: loading skeleton; on error show message and retry.
+   - Single app: if ui-screen 404, show “App not found”.
+   - Credits: loading state; on error show “—” or “Unavailable”.
+
+Credits endpoint note
+---------------------
+Use GET /aiqod-agent/agent/credits as the single source of truth for sidebar credits (available = balance - reserved). Refresh it after any generation attempt (success/error/402) so the sidebar stays accurate.
+
+Summary
+-------
+- Sidebar: Create app, Apps, Credits (bottom), Settings, Documentation.
+- Create app → existing builder flow (prompt → SSE → preview).
+- Apps → ui-list → list; open app via ui-screen public_url (in-app iframe or new tab).
+- Credits → GET /aiqod-agent/agent/credits (subscriberId required) + 402 UX on generate-angular-app.
+- Settings and Documentation → placeholder pages.
+- Layout and routing: dashboard layout with sidebar; add /create, /apps, /apps/[...], /settings, /documentation.
+- API layer: uiList, uiScreen, and getCredits wired to /credits.
+
+================================================================================
+PHASE 3 PLAN — Full-Code Editor For Screens (Angular + Backend)
+================================================================================
+
+Overview
+--------
+Phase 3 adds an in-app editor for a selected screen that shows:
+- All Angular code files for that screen (from the generated Angular workspace under `generated-apps`).
+- All backend functions for that screen (from the `backend_functions` / `functions` collection).
+Users can browse files, view and edit code, and save changes back to the backend.
+
+Use Monaco editor.
+
+on create app page
+   - After generation completes, show a single horizontal button group (three buttons in one line) above the right-hand panel:
+     - Preview: default active; shows the iframe preview (public_url).
+     - Angular code: navigates to or opens the code view for Angular files for this screen (Phase 3 editor route).
+     - Backend functions: navigates to or opens the backend functions code view for this screen (Phase 3 editor route, focused on backend tab).
+
+Key Backend Endpoints (from backend/agent_new.py and routers/editor.py)
+-----------------------------------------------------------------------
+
+Screen + backend summaries:
+- GET /aiqod-agent/agent/screen-state/{project_id}/{screen_id}
+  - Returns current screen state (IR schema, Angular metadata, backend metadata).
+  - Use to populate high-level “Screen overview” panel in the editor (e.g. name, selector, IR).
+
+- GET /aiqod-agent/agent/screen-functions/{project_id}/{screen_id}
+  - Returns all backend functions for this screen, with:
+    - function_id, type, description
+    - source_code, models_source
+    - input_model_name, response_model_name
+    - input_model schema, response_model schema
+    - metadata, created_at, updated_at
+  - Use to list + display backend function code in the editor (right-hand pane or dedicated tab).
+
+Angular workspace + file operations (routers/editor.py, prefix /aiqod-agent/agent/editor):
+- POST /aiqod-agent/agent/editor/init
+  - Body: { "screen_id": string }
+  - Finds the screen in DB, resolves its Angular workspace directory (under generated-apps), and initializes a sandbox session.
+  - Response: { success, session_id, root_path, file_tree, selector }.
+  - Use this to bootstrap the editor session for a screen and to show the initial file tree.
+
+- GET /aiqod-agent/agent/editor/file-tree?session_id=...
+  - Returns { success, file_tree } representing the Angular project files for that screen.
+  - Use to render a left-side file explorer (src/app, components, services, etc.).
+
+- GET /aiqod-agent/agent/editor/file?session_id=...&file_path=...
+  - Returns { content } for the requested file inside the Angular workspace.
+  - Use when user selects a file in the tree to populate the code editor view.
+
+- POST /aiqod-agent/agent/editor/file
+  - Body: { session_id, file_path, content }.
+  - Writes updated content back into the sandboxed Angular workspace.
+  - Use when user saves front-end code changes from the editor.
+
+Backend function updates (admin endpoints):
+- POST /aiqod-agent/agent/admin/update-function
+  - Body: { project_id, function_id, source_code, models_source? }.
+  - Updates backend function code in the database and reloads it into runtime.
+  - Use when user edits backend function code and clicks “Save” in the editor.
+
+- (Optional) GET /aiqod-agent/agent/admin/functions/{project_id}
+  - Lists all functions for a project (ids + basic meta).
+  - Use only if you want a project-level functions browser in the editor (beyond per-screen).
+
+Editor UX and Routing
+---------------------
+
+1) New route(s) for the editor
+   - Add a route under the dashboard layout:
+     - /apps/[projectId]/[screenId]/editor
+   - Entry points:
+     - From Apps list: each screen row/card has “Open editor” which navigates to /apps/[projectId]/[screenId]/editor.
+     - Optionally from preview page: “Edit in builder/editor”.
+
+2) Editor layout
+   - Reuse existing sidebar (Create app, Apps, Credits, Settings, Documentation).
+   - Inside editor page content:
+     - Top: screen header (screen name, project_id, screen_id; basic metadata from screen-state).
+     - Main area: split view:
+       - Left: file tree (Angular files) and optionally a “Backend functions” list/tab.
+       - Right: code editor pane with tabs for each open file/function.
+     - Bottom or side: status bar for session_id, unsaved changes, last saved time.
+
+3) Data flow when opening editor for a screen
+   - Inputs: project_id (formatted as "<project>-sb-<subscriber>"), screen_id.
+   - Step 1: Fetch high-level screen info:
+     - Call GET /aiqod-agent/agent/screen-state/{project_id}/{screen_id} to show metadata / IR summary.
+   - Step 2: Initialize Angular editor session:
+     - Call POST /aiqod-agent/agent/editor/init with { screen_id }.
+     - Store session_id and file_tree in state.
+   - Step 3: Populate Angular file tree:
+     - Use file_tree from init; optionally refresh with GET /editor/file-tree?session_id=... if needed.
+   - Step 4: Load backend functions:
+     - Call GET /aiqod-agent/agent/screen-functions/{project_id}/{screen_id}.
+     - Store list of functions (function_id + source_code + models_source) in state.
+
+4) Editing Angular code
+   - When user clicks a file:
+     - If content not yet loaded: call GET /editor/file?session_id=...&file_path=... and populate the editor tab.
+     - Show TypeScript/HTML/SCSS with syntax highlighting.
+   - On Save:
+     - Call POST /editor/file with { session_id, file_path, content }.
+     - Show success toast + mark tab as saved.
+   - Consider auto-save / “unsaved changes” indicator per tab.
+
+5) Editing backend functions
+   - List section “Backend functions” (from screen-functions endpoint).
+   - When user selects a function:
+     - Open a tab with:
+       - Source code editor for function source_code.
+       - Optional secondary view for models_source or schemas.
+   - On Save:
+     - Call POST /aiqod-agent/agent/admin/update-function with { project_id, function_id, source_code, models_source? }.
+     - On success, show toast and optionally refetch screen-functions to reflect any metadata changes.
+
+6) Live preview + view-mode buttons
+   - Keep existing iframe preview using public_url (from generate-angular-app complete payload or ui-screen/screen-state).
+   - In the editor page, add a primary view-mode button group in a single row (three buttons side by side) above the main right-hand content:
+     - Preview: shows the iframe with public_url (default selected).
+     - Angular code: shows the Angular code file view (file tree + code editor) for this screen.
+     - Backend functions: shows the backend function code view (list + code editor) for this screen.
+   - These buttons act as tabs/toggles controlling what is rendered in the main right-hand pane, while keeping the same route (/apps/[projectId]/[screenId]/editor) and state.
+   - After publishing via existing editor backend endpoints (if wired from UI), reload the preview iframe when the Preview button is active.
+
+API Layer Additions (frontend)
+------------------------------
+
+Add helpers in lib/api.ts (or similar):
+- getScreenState(projectId, screenId)
+  - GET `${baseUrl}/aiqod-agent/agent/screen-state/${projectId}/${screenId}`
+- getScreenFunctions(projectId, screenId)
+  - GET `${baseUrl}/aiqod-agent/agent/screen-functions/${projectId}/${screenId}`
+- initEditor(screenId)
+  - POST `${baseUrl}/aiqod-agent/agent/editor/init` with { screen_id }.
+- getEditorFileTree(sessionId)
+  - GET `${baseUrl}/aiqod-agent/agent/editor/file-tree?session_id=${sessionId}`
+- readEditorFile(sessionId, filePath)
+  - GET `${baseUrl}/aiqod-agent/agent/editor/file?session_id=${sessionId}&file_path=${encodeURIComponent(filePath)}`
+- writeEditorFile(sessionId, filePath, content)
+  - POST `${baseUrl}/aiqod-agent/agent/editor/file` with { session_id, file_path, content }.
+- updateBackendFunction(projectId, functionId, sourceCode, modelsSource?)
+  - POST `${baseUrl}/aiqod-agent/agent/admin/update-function` with { project_id, function_id, source_code, models_source }.
+- Backend function testing (see **Backend function testing on the FE** later in this phase): `saveBackendDraft`, `testBackendFunction`, optional `getBackendLastError`, `executeDynamicFunction` — draft + `/editor/backend/test` vs live `/dynamic/execute/{project_id}`.
+
+Code-update endpoints: request, response, and frontend actions
+--------------------------------------------------------------
+
+Base path: use NEXT_PUBLIC_API_URL (e.g. baseUrl + "/aiqod-agent/agent/..."). Editor routes are under /aiqod-agent/agent/editor; admin under /aiqod-agent/agent/admin.
+
+--- 1) POST /aiqod-agent/agent/editor/init ---
+Request (JSON body):
+  { "screen_id": string }   // required
+
+Success (200):
+  {
+    "success": true,
+    "session_id": string,
+    "root_path": string,
+    "file_tree": array,   // tree of { name, path, children?, type? }
+    "selector": string    // e.g. "app-root"
+  }
+
+Errors: 404 (screen not found / source not found), 500 (init failed).
+
+Frontend:
+  - Call when opening the editor for a screen (e.g. /apps/[projectId]/[screenId]/editor).
+  - Store session_id for all subsequent editor calls (file read/write, file-tree, build, publish).
+  - Use file_tree to render the left-side file explorer; use selector if needed for preview.
+
+--- 2) GET /aiqod-agent/agent/editor/file ---
+Query params:
+  session_id (required), file_path (required, relative path inside workspace)
+
+Success (200):
+  { "content": string }   // file contents (UTF-8)
+
+Errors: 404 (file not found), 500.
+
+Frontend:
+  - Call when user selects a file in the tree (or opens a tab). Use same file_path as in file_tree (e.g. "src/app/app.component.ts").
+  - Display content in Monaco (or code editor). Track which files are loaded to avoid refetching.
+
+--- 3) POST /aiqod-agent/agent/editor/file ---
+Request (JSON body):
+  {
+    "session_id": string,
+    "file_path": string,   // relative path, same format as file_tree
+    "content": string
+  }
+
+Success (200):
+  { "success": true }
+
+Errors: 500 (write failed).
+
+Frontend:
+  - Call when user clicks Save for an Angular file. Use current session_id and the tab’s file_path and editor content.
+  - On success: show “Saved” toast, clear unsaved indicator for that tab. Changes are only in the sandbox until Publish.
+  - To see changes in preview: user must run Build (and optionally Publish). Do not expect the iframe to update from this call alone.
+
+--- 4) GET /aiqod-agent/agent/editor/file-tree ---
+Query params:
+  session_id (required)
+
+Success (200):
+  { "success": true, "file_tree": array }
+
+Errors: 404 (session not found), 500.
+
+Frontend:
+  - Optional refresh of the file tree (e.g. after adding a file or if init did not return tree). Use same structure as init’s file_tree for the explorer.
+
+--- 5) POST /aiqod-agent/agent/editor/build/start ---
+Request (JSON body):
+  { "session_id": string }
+
+Success (200):
+  { "success": true, "message": "Build started" }
+
+Errors: 500.
+
+Frontend:
+  - Call when user clicks “Rebuild” (or “Build”) for preview. Then open SSE stream (see 6) to show logs and get preview_url when done.
+  - Build runs in sandbox; output is for preview only until user runs Publish.
+
+--- 6) GET /aiqod-agent/agent/editor/build/stream/{session_id} ---
+Response: text/event-stream. Each event: data: <JSON>\n\n
+
+Event payloads:
+  - { "type": "log", "data": string }   — append to build log UI
+  - { "type": "close", "preview_url": string } — build succeeded; preview at preview_url (same-origin or configured base)
+  - { "type": "error", "data": string } — build failed
+  - Stream ends with connection close after "close" or "error".
+
+Errors: 404 if no build session active for that session_id (e.g. call build/start first).
+
+Frontend:
+  - After POST build/start, open EventSource(buildStreamUrl) or fetch with stream. Parse each "data:" line as JSON.
+  - Append "log" messages to a build log panel; show "error" and stop; on "close", set iframe src to preview_url (or show “Preview ready” and refresh iframe with existing public_url for preview mode). Then stop listening.
+
+Frontend-only fix: iframe preview URL after Rebuild
+-------------------------------------------------
+The stream sends preview_url as a relative path (e.g. /static/sessions/.../dist/angular-base-project). If you set iframe.src = preview_url, the browser loads it from the frontend origin (e.g. localhost:3000), so the iframe gets 404. Fix in frontend only: build the full URL using the backend origin.
+
+1. Get the backend origin from your API base URL, e.g.:
+   const apiBase = process.env.NEXT_PUBLIC_API_URL;  // e.g. "http://localhost:5010/dev"
+   const backendOrigin = apiBase ? new URL(apiBase).origin : "";  // "http://localhost:5010"
+
+2. When you receive the "close" event from the build stream (data.type === "close" && data.preview_url):
+   const fullPreviewUrl = data.preview_url.startsWith("http")
+     ? data.preview_url
+     : `${backendOrigin}${data.preview_url}`;
+   setPreviewIframeUrl(fullPreviewUrl);  // or iframeRef.current.src = fullPreviewUrl;
+
+3. Use fullPreviewUrl as the iframe src. No backend changes required.
+
+--- 7) POST /aiqod-agent/agent/editor/publish ---
+Request (JSON body):
+  {
+    "session_id": string,
+    "screen_id": string
+  }
+
+Success (200):
+  { "success": true, "message": "Published successfully" }
+
+Errors: 404 (screen/source not found), 500 (build failed or deploy failed).
+
+Frontend:
+  - Call when user clicks “Publish” (deploy to production). Backend builds from sandbox, writes source back to the same version workspace, and deploys dist to the same versioned folder (same version updated; see “Angular editor: same version updated”).
+  - On success: show “Published successfully” toast; refresh preview iframe if user is on Preview tab so they see the live app. Session is cleaned up server-side; further edits require re-init (new session) if you keep editor open, or just refresh the editor page to get a new session.
+
+--- 8) POST /aiqod-agent/agent/admin/update-function ---
+Request (JSON body):
+  {
+    "project_id": string,
+    "function_id": string,
+    "source_code": string,      // required, non-empty
+    "models_source": string | null   // optional; if omitted or invalid, backend keeps existing models
+  }
+
+Success (200):
+  {
+    "success": true,
+    "project_id": string,
+    "function_id": string,
+    "message": string,   // e.g. "Function {id} updated and reloaded successfully"
+    "saved_to_db": true,
+    "loaded_to_cache": true
+  }
+
+Errors:
+  - 400: source_code missing or empty → { "success": false, "error": "..." }
+  - 404: function not found or update failed (e.g. model compile error) → { "success": false, "project_id", "function_id", "error": "..." }
+  - 500: server error
+
+Frontend:
+  - Call when user clicks Save on a backend function in the editor. Send project_id (e.g. from screen/project context), function_id (from screen-functions list), and the current editor content for source_code and optionally models_source.
+  - On success: show success toast; optionally refetch GET /screen-functions to refresh updated_at and list. New code is live immediately for API calls; no rebuild needed. No need to refresh Angular preview unless the user wants to test the updated function in the UI.
+
+--- Optional: backend draft (session-only) ---
+- POST /aiqod-agent/agent/editor/backend/draft — Body: { session_id, function_id, source_code, models_source }. Saves draft only in session (no DB update). Use for “draft” or autosave before user clicks “Save” (update-function).
+- GET /aiqod-agent/agent/editor/backend/draft?session_id=...&function_id=... — Returns draft if any. Use to restore unsaved backend edits when re-opening a function tab.
+
+Angular code: Rebuild and save flow
+----------------------------------
+- When the user edits Angular code and clicks Save:
+  1. Frontend calls POST /editor/file with { session_id, file_path, content }. Backend writes the file into the sandboxed Angular workspace.
+  2. To see changes in the preview, the generated Angular app must be rebuilt (and optionally redeployed). Plan for one of:
+     - Option A — Backend rebuild on save: After POST /editor/file succeeds, backend triggers a build (e.g. ng build) for that screen’s workspace; when build completes, the public_url (or same origin assets) serve the new bundle. Frontend then refreshes the preview iframe (or user clicks “Refresh preview”) to show updated UI.
+     - Option B — Explicit Rebuild action: Frontend shows “Save” (writes file only) and a separate “Rebuild” (or “Build & refresh”) button that calls a dedicated endpoint (e.g. POST /editor/rebuild or POST /editor/publish with session_id/screen_id). Backend runs the build; on success returns updated public_url or “ready” so frontend can refresh the iframe.
+- Add to implementation: (1) Define or use backend endpoint for “rebuild after save” or “rebuild on demand”. (2) After a successful rebuild (or after save if backend rebuilds automatically), refresh the preview iframe when the user is on the Preview tab so they see the new code. (3) Show clear UX: “Saved” vs “Building…” vs “Preview updated” so the user understands the pipeline (edit → save → rebuild → refresh).
+
+Backend functions: Save and update flow
+--------------------------------------
+- When the user edits a backend function and clicks Save:
+  1. Frontend calls POST /admin/update-function with { project_id, function_id, source_code, models_source? }.
+  2. Backend updates the function in the database and reloads it into the runtime (per existing backend behavior). No separate “rebuild” step is required for backend code.
+  3. New code is live immediately: any subsequent API calls that invoke this function will use the updated code.
+  4. Frontend: on success, show a success toast and optionally refetch GET /screen-functions to refresh metadata (e.g. updated_at) and to ensure the editor state matches the server. No need to refresh the Angular preview for backend-only changes unless the screen’s UI explicitly calls the updated function and the user wants to test it (user can refresh preview or re-run the flow as needed).
+
+Backend function testing on the FE (Run with expected input)
+------------------------------------------------------------
+Goal: In the code editor, on the **Backend functions** tab, let the user run a function with a JSON body that matches the function’s **input model** and see the JSON response (or validation / execution errors) without leaving the app.
+
+Two execution modes (pick UX that matches product; both are valid):
+
+**A) Test session draft (editor sandbox — matches unsaved editor buffer)**  
+Use this when the user is editing code in the editor and wants to try **draft** source before **Save** (admin update-function).
+
+1. **Save draft to session** (required before test if the buffer is not already in session draft):
+   - **POST** `${baseUrl}/aiqod-agent/agent/editor/backend/draft`
+   - **Request (JSON):**
+     ```json
+     {
+       "session_id": "string",
+       "function_id": "string",
+       "source_code": "string",
+       "models_source": "string"
+     }
+     ```
+   - **Success (200):** `{ "success": true }`
+   - **Errors:** 500 on failure.
+   - **Frontend:** Call when user clicks **“Run test”** (or auto-call right before test) using current Monaco content for `source_code` and `models_source` from the open function tab; `session_id` from editor init.
+
+2. **Execute draft in sandbox worker**
+   - **POST** `${baseUrl}/aiqod-agent/agent/editor/backend/test`
+   - **Request (JSON):**
+     ```json
+     {
+       "session_id": "string",
+       "function_id": "string",
+       "test_payload": { }
+     }
+     ```
+     - `test_payload` is the **function input as a plain object** (same shape as `params` for dynamic execute). Keys/values must match the Pydantic input model for that function.
+   - **Success (200):** Returns the function’s **return value as JSON** (typically a dict), e.g. `{ "success": true, ... }` — exact shape is defined by the generated function. The backend may normalize logical failures (e.g. set `success: false` if the dict contains an `error` string or `success: false`).
+   - **Failure cases:**
+     - If no draft exists: `{ "success": false, "message": "No draft code found. Please save the draft first." }` (HTTP 200 with that body — treat `success: false` in UI).
+     - Exception path: `{ "success": false, "message": "...", "details": "...", "execution_time": 0 }`.
+   - **Frontend:** **Run test** button: optionally POST `/backend/draft` first with current editor text, then POST `/backend/test` with `test_payload` from the **Request body** panel (see UI below). Show response in a read-only **Response** panel (pretty-printed JSON). Show loading state during execution.
+
+3. **Optional — last error (for “Fix with AI” or debugging)**
+   - **GET** `${baseUrl}/aiqod-agent/agent/editor/backend/last-error?session_id=...`
+   - **Success:** `{ "success": true, "error_data": { ... } }` — use if you add a “View last error” or wire regenerate flow (`POST /aiqod-agent/agent/editor/backend/regenerate` already exists for AI fix).
+
+**B) Execute live function (database + registry — matches deployed/runtime behavior)**  
+Use this after the function is saved (`POST /admin/update-function`) or when the user explicitly chooses **“Run against live”**.
+
+- **POST** `${baseUrl}/aiqod-agent/agent/dynamic/execute/{project_id}`
+- **Path:** `project_id` must be the same screen project id as elsewhere (e.g. `<project>-sb-<subscriber>`).
+- **Request (JSON):**
+  ```json
+  {
+    "function_id": "string",
+    "params": { },
+    "request_meta": { }
+  }
+  ```
+  - `params`: same logical content as `test_payload` / function input model.
+  - `request_meta`: optional; runtime may inject credentials and other context (see Phase 4). For a minimal FE test, `{}` is often enough unless the function reads `request_meta`.
+- **Success (200):** JSON body — function return value.
+- **Errors:** `400` if `function_id` missing; `404` if function not in registry; `422` with `validation_error` / Pydantic `details` if `params` don’t match the input model; `500` on server/sandbox errors.
+- **Frontend:** Separate button **“Run live”** or a toggle **Draft vs Live** so users understand draft tests session-only code vs live tests DB-backed code.
+
+**Expected input (from screen-functions)**  
+- **GET** `/aiqod-agent/agent/screen-functions/{project_id}/{screen_id}` already returns, per function, `input_model_name`, `input_model` (schema), `response_model`, etc.
+- **FE should:** When a function is selected, show a collapsible **“Expected input”** panel (schema summary or JSON Schema viewer). Pre-fill **Request body** with `{}` or a minimal example object derived from required fields in the schema when possible (optional enhancement).
+
+**UI to add on the Backend functions view**
+- **Request body:** textarea or Monaco (JSON mode) bound to state; validate JSON before send; pretty-print on blur.
+- **Actions:** **Run test** (draft path: draft + `/backend/test`) and optionally **Run live** (`/dynamic/execute/{project_id}`).
+- **Response:** read-only panel for JSON; on `422`, show `details` from API; on logical `success: false` in body, show error styling (backend test path already surfaces this).
+- **Session:** `session_id` must come from `POST /editor/init`; if session expired, prompt to refresh editor / re-init.
+
+**API layer additions (frontend helpers)**  
+Add to `lib/api.ts` (or similar):
+- `saveBackendDraft(sessionId, functionId, sourceCode, modelsSource)` → POST `/aiqod-agent/agent/editor/backend/draft`
+- `testBackendFunction(sessionId, functionId, testPayload)` → POST `/aiqod-agent/agent/editor/backend/test`
+- `getBackendLastError(sessionId)` → GET `/aiqod-agent/agent/editor/backend/last-error?session_id=...`
+- `executeDynamicFunction(projectId, body)` → POST `/aiqod-agent/agent/dynamic/execute/${projectId}` with `{ function_id, params, request_meta }`
+
+**Summary**  
+- **Editor-local test:** `POST /editor/backend/draft` (current code) → `POST /editor/backend/test` (`test_payload` = expected input).  
+- **Live test:** `POST /aiqod-agent/agent/dynamic/execute/{project_id}` with `params` + optional `request_meta`.  
+- **Input discovery:** from `GET /screen-functions` schemas; optional example JSON in the UI.
+
+Angular editor: same version updated (no new version created)
+-------------------------------------------------------------
+- When the user edits Angular code from the frontend and uses Rebuild + Publish (editor flow), the backend updates the same version; it does not create a new version.
+- Backend behavior (routers/editor.py, services/sandbox_editor.py):
+  - Init: Editor session is a copy of the screen’s existing workspace (from DB: angular.workspace_directory, which is versioned e.g. angular-{project_id}-{screen_id}-v{version}-workspace).
+  - Save (POST /editor/file): Writes only to the sandbox (temp session).
+  - Publish (POST /editor/publish): (1) Build runs in sandbox. (2) save_source_back syncs sandbox source back to the same original workspace (overwrites files in place). (3) publish_changes copies dist to the same versioned deploy folder (e.g. LIBERTY_FS_ROOT/{screen_id}-v{version} from DB). The screen’s angular.version and angular.public_url in the DB are unchanged.
+- Contrast with angular_generator.py: generate_app (initial generation) and update_app (AI-driven selective regeneration) both create a new version (new workspace, new deploy dir, new version id). The editor’s Publish flow does not call those; it overwrites the current version’s workspace and deploy folder.
+- If product later wants “Publish” to create a new version (e.g. for history/rollback), the backend would need to call into angular_generator’s versioned flow (e.g. create new version, copy workspace, build, upload to new version dir, update DB and symlink) instead of overwriting the same paths.
+
+Notes
+-----
+- Continue to respect project_id format `<project_id>-sb-<subscriber_id>` for all endpoints requiring project_id.
+- Ensure editor UI makes it clear when changes are persisted vs draft.
+- Reuse existing error-handling and toast/snackbar patterns for save failures.
+
+================================================================================
+PHASE 4 PLAN — Project credentials (secrets for backend functions)
+================================================================================
+
+Overview
+--------
+Phase 4 lets users add, list, and remove **per-project** credentials (API keys, tokens, SMTP JSON, etc.). Values are **encrypted at rest**; the API **never returns** secret values—only metadata. The runtime injects decrypted credentials into `request_meta["credentials"]` when backend functions run, so generated code can call external APIs or email without hardcoding secrets.
+
+Backend router: `backend/routers/credentials.py` (mounted under the same app prefix as other agent routes).
+
+What it does (behavior)
+-----------------------
+- **POST** creates a new credential or **updates** an existing one with the same `name` in the same `environment` (upsert). If `value` is omitted on update, only metadata fields can be updated without re-sending the secret.
+- **GET** returns a list of credential **metadata** only (name, type, service, scope, environment, timestamps)—no plaintext values.
+- **DELETE** removes a credential by `name` (and optional `environment`).
+
+Prerequisites
+-------------
+- Server must have `CRED_MASTER_KEY` configured. If not, credential endpoints return **503** with `credential_store_unavailable`.
+
+Where to place the UI (button / entry points)
+----------------------------------------------
+- **Primary:** On the **screen editor** page (`/apps/[projectId]/[screenId]/editor`), in the **top header row** next to screen title / project id—add a **“Credentials”** or **“Project secrets”** button that opens a **modal or slide-over panel** (form + list). This keeps secrets next to the context where backend functions run (Phase 3).
+- **Secondary (optional):** On the **Apps list** detail row / overflow menu for a screen (“Manage credentials”) navigating to the same modal with `projectId` pre-filled—useful when the user is not in the editor.
+- **Do not** put raw secret values in URL query params or client-side logs; use HTTPS; mask inputs (password fields).
+
+API: add / update credential (upsert)
+---------------------------------------
+**Method / path:**
+`POST ${baseUrl}/aiqod-agent/agent/projects/{project_id}/credentials`
+
+**Query params (optional, for audit / ownership fields on the stored doc):**
+- `orgId`
+- `subscriberId`
+- `userId`
+
+**Request body (JSON):**
+```json
+{
+  "name": "string",
+  "type": "string",
+  "service": "string",
+  "scope": "backend_only | frontend_public",
+  "value": "string | null",
+  "environment": "string | null"
+}
+```
+- `name` (required): unique per project per environment (e.g. `github_token`, `stripe_secret`).
+- `type` (required): e.g. `bearer_token`, `api_key`, `http_header`, `basic_auth` (use values your product documents; backend stores as string).
+- `service` (optional, default `""`): label e.g. `GitHub`, `Stripe`.
+- `scope` (optional, default `backend_only`): prefer `backend_only` for secrets; use `frontend_public` only if product explicitly allows exposing metadata (secret values are still not returned by list API).
+- `value` (optional): the secret. Omit only when updating metadata without changing the stored secret.
+- `environment` (optional): defaults to backend default (e.g. `default`) if omitted; use for staging vs prod if you adopt multi-env credentials.
+
+**Success (200):**
+```json
+{
+  "success": true,
+  "credential": {
+    "project_id": "string",
+    "name": "string",
+    "type": "string",
+    "service": "string",
+    "scope": "string",
+    "environment": "string",
+    "updatedAt": "ISO-8601 datetime"
+  }
+}
+```
+
+**Errors:**
+- **503** — credential store unavailable (`CRED_MASTER_KEY` not set).
+- **4xx/5xx** — validation or server errors (handle generically with toast).
+
+**Frontend actions:**
+- On submit: POST with `project_id` from route context (`<project>-sb-<subscriber>` format per existing plan).
+- Pass `orgId` / `subscriberId` / `userId` query params when auth exists (same pattern as generate-angular-app).
+- On success: close form or clear fields; **refetch GET list** to refresh the table.
+- Never display returned `value` (it is not in the response).
+
+API: list credentials (metadata only)
+-------------------------------------
+**Method / path:**
+`GET ${baseUrl}/aiqod-agent/agent/projects/{project_id}/credentials`
+
+**Query params (optional):**
+- `environment` — if set, filter to that environment; if omitted, backend returns credentials for the project according to `CredentialService.list_credentials` behavior (all environments when not filtered).
+
+**Success (200):**
+```json
+{
+  "success": true,
+  "credentials": [
+    {
+      "project_id": "string",
+      "name": "string",
+      "type": "string",
+      "service": "string",
+      "scope": "string",
+      "environment": "string",
+      "updatedAt": "..."
+    }
+  ]
+}
+```
+(Exact fields match stored metadata; encrypted fields are never included.)
+
+**Frontend actions:**
+- Call when opening the credentials panel and after add/update/delete.
+- Render a table: name, type, service, scope, environment, updated; actions: Delete, Edit (re-open form with name pre-filled; user must re-enter `value` if they want to rotate the secret).
+
+API: delete credential
+------------------------
+**Method / path:**
+`DELETE ${baseUrl}/aiqod-agent/agent/projects/{project_id}/credentials/{name}`
+
+**Query params (optional):**
+- `environment` — must match the credential’s environment if not default.
+
+**Success (200):**
+```json
+{
+  "success": true,
+  "message": "Credential '{name}' deleted."
+}
+```
+
+**Errors:**
+- **404** — `credential_not_found` if no matching name/environment.
+
+API layer (frontend helpers)
+----------------------------
+Add to `lib/api.ts` (or similar), using `encodeURIComponent` for `project_id` and `name` in paths:
+- `createOrUpdateCredential(projectId, body, { orgId?, subscriberId?, userId? })` → POST `/aiqod-agent/agent/projects/${projectId}/credentials` + query string for optional ids.
+- `listProjectCredentials(projectId, environment?)` → GET same base path + optional `?environment=...`.
+- `deleteProjectCredential(projectId, name, environment?)` → DELETE `/aiqod-agent/agent/projects/${projectId}/credentials/${encodeURIComponent(name)}` + optional `environment`.
+
+Summary
+-------
+- **Button placement:** editor page header (“Credentials” / “Project secrets”) → modal with add form + list; optional Apps list entry point.
+- **Add secret:** POST projects/{project_id}/credentials with JSON body; response returns metadata only.
+- **List:** GET projects/{project_id}/credentials; no values returned.
+- **Delete:** DELETE projects/{project_id}/credentials/{name}.
+- **Purpose:** supply secrets for backend function execution without hardcoding; encrypted storage; optional audit query params on create.
+
+================================================================================
+PHASE 5 PLAN — Screen rollback (version pointer + cleanup)
+================================================================================
+
+Overview
+--------
+Phase 5 adds rollback for a screen: the user selects an older successful + stable version and the system “moves the pointer” so that the screen loads that version again.
+
+How rollback works in the backend (collections)
+----------------------------------------------
+- screen_generations = immutable version snapshots (one document per screen_id + project_id + version).
+- screens = pointer collection that stores which version is “current” for a screen:
+  - screens.current_version (used by GET /ui-screen/... to resolve which version to return)
+  - screens.latest_version (backend sets this to the rollback target as well)
+
+Rollback does not edit the snapshot in screen_generations. It updates the screens pointer and then cleans up versions newer than the target.
+
+API: rollback endpoint
+---------------------
+Method / path:
+POST ${baseUrl}/aiqod-agent/agent/rollback-screen
+
+Request body (JSON):
+{
+  "screen_id": "string",
+  "project_id": "string",
+  "version": "string"
+}
+- version is the target version timestamp string (example from backend docstring: "20260209090207").
+
+Success (200):
+{
+  "success": true,
+  "screen_id": "string",
+  "project_id": "string",
+  "version": "string",
+  "message": "Rollback pointer updated successfully",
+  "rollback_cleanup": {
+    "versions_removed": ["string"],
+    "files_removed": 0,
+    "screen_marked": 0,
+    "functions_marked": 0,
+    "screen_deleted": 0,
+    "functions_deleted": 0
+  }
+}
+Notes:
+- rollback_cleanup.versions_removed = versions newer than the target that were removed/marked deleted.
+- The backend also attempts to sync backend functions and update the Angular deploy symlink internally.
+
+Error responses to handle:
+- 400 missing fields → { success: false, error: "Missing required field(s): screen_id, project_id, version" }
+- 400 safety gate → { success: false, error: "Cannot rollback to an unstable or failed build", build_status, is_stable }
+- 404 target version not found (or deleted) → { success: false, error: "Version ... not found for screen ..." }
+
+API: refresh after rollback (what the FE should call next)
+---------------------------------------------------------
+After rollback succeeds, the FE should refetch the screen using the pointer-aware endpoint:
+
+Method / path:
+GET ${baseUrl}/aiqod-agent/agent/ui-screen/{screen_id}?project_id=${project_id}
+
+Success (200):
+{ "success": true, "data": { "...screen_generation_doc..." } }
+
+Frontend must then:
+- Use data.angular.public_url (or equivalent field on the record) as the new iframe URL.
+- Update local “current version” label in the UI (use data.version if present).
+
+Version selection UX (frontend)
+------------------------------
+Rollback must be a version picker, not a free-text input.
+
+Add a “Rollback” button in:
+- Screen preview page header (Phase 2/3 “single app view”)
+- Screen editor header (/apps/[projectId]/[screenId]/editor)
+
+Clicking it opens a modal (or slide-over) with:
+- A versions table (radio selection or row click):
+  - Version (timestamp string)
+  - Created time (optional)
+  - Build status
+  - Stable (yes/no)
+  - Deleted (hidden; do not show deleted versions)
+  - Actions: “Preview this version” (optional) and “Rollback to this version”
+- A clear warning: “Only successful + stable versions can be rolled back to.”
+
+API: list versions for picker (required)
+---------------------------------------
+To show versions, add/expect a backend endpoint that lists versions from screen_generations for a given screen:
+
+Method / path (recommended to add in backend):
+GET ${baseUrl}/aiqod-agent/agent/screen-versions?project_id=${project_id}&screen_id=${screen_id}
+
+Success (200):
+{
+  "success": true,
+  "project_id": "string",
+  "screen_id": "string",
+  "versions": [
+    {
+      "version": "string",
+      "created_at": "ISO-8601 datetime | null",
+      "build_status": "success | failed | ...",
+      "is_stable": true,
+      "status": "active | draft | ...",
+      "public_url": "string | null"
+    }
+  ]
+}
+Frontend behavior:
+- Sort by version descending (newest first).
+- Only show versions where deleted != true (backend should filter these out).
+- Disable or visually mark versions where build_status != "success" or is_stable == false (cannot rollback to them).
+
+If this endpoint is not available yet, rollback UX cannot meet requirements; do not ship a text field as the primary UX.
+
+Frontend flow (end-to-end rollback)
+----------------------------------
+1) User clicks “Rollback” on a screen page.
+2) FE loads available versions for selection:
+   - Call GET /aiqod-agent/agent/screen-versions?project_id=...&screen_id=...
+3) User selects a target version.
+4) FE calls:
+   - POST /aiqod-agent/agent/rollback-screen with { screen_id, project_id, version }
+5) On success, refresh *everything tied to the version*:
+   - Preview iframe: call GET /aiqod-agent/agent/ui-screen/{screen_id}?project_id=..., then set iframe src to returned data.angular.public_url (and update “current version” label).
+   - Editor state reset (Angular files):
+     - Clear open editor tabs and any cached file contents.
+     - Re-run POST /aiqod-agent/agent/editor/init with { screen_id } to get a fresh session_id + file_tree for the now-current version.
+     - Re-fetch any currently selected file via GET /editor/file?... under the new session.
+   - Backend functions panel: refetch GET /aiqod-agent/agent/screen-functions/{project_id}/{screen_id} so function list/code matches the restored version.
+   - Screen metadata/state: refetch GET /aiqod-agent/agent/screen-state/{project_id}/{screen_id} for IR + backend/angular metadata consistency.
+6) On error:
+   - If 400 unstable/failed: show message + disable that version option in the UI (if listed).
+   - If 404 version missing: show message and prompt user to pick another version.
+
+API layer (frontend helpers)
+---------------------------
+Add to lib/api.ts (or similar):
+- listScreenVersions(projectId, screenId) → GET /aiqod-agent/agent/screen-versions?project_id=...&screen_id=...
+- rollbackScreen({ projectId, screenId, version }) → POST /aiqod-agent/agent/rollback-screen
+- getUiScreen(screenId, projectId?) → GET /aiqod-agent/agent/ui-screen/${screenId}?project_id=${projectId}
+
+Summary
+-------
+- Rollback call: POST /aiqod-agent/agent/rollback-screen with { screen_id, project_id, version }.
+- After rollback: always refetch pointer-aware GET /ui-screen/{screen_id}?project_id=... and update iframe public_url.
+- Collections used by backend: screen_generations (snapshots) + screens (pointer).
