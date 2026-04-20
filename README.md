@@ -1,4 +1,4 @@
-# Prompt Builder Pro (AI Screen Builder)
+# Orkestrix (AI Screen Builder)
 
 Frontend for **AI Screen Builder**: a Vite + React app that turns natural-language prompts into **Angular** screens via a backend agent API. It streams generation progress (SSE), previews built UIs, supports chat-based iteration, saving screens, version rollback, and a Monaco-based editor.
 
@@ -14,7 +14,7 @@ Frontend for **AI Screen Builder**: a Vite + React app that turns natural-langua
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) (LTS recommended)
-- A running **AI Screen Builder / aiqod-agent** HTTP API (see [Environment](#environment))
+- A running **AI Screen Builder / ai-agent** HTTP API (see [Environment](#environment))
 
 ## Quick start
 
@@ -36,13 +36,13 @@ Variables are read at build time via Vite (`import.meta.env`). Copy `.env.exampl
 | Variable | Description |
 | -------- | ----------- |
 | `VITE_API_URL` | Base URL of the backend (no trailing path segment for the agent). Example: `http://localhost:5010` |
-| `VITE_API_CONTEXT_PATH` | Path segment before `aiqod-agent/...` (e.g. `dev`). **Use `KEY=value` with no spaces around `=`** |
+| `VITE_API_CONTEXT_PATH` | Path segment before `ai-agent/...` (e.g. `dev`). **Use `KEY=value` with no spaces around `=`** |
 | `VITE_SUBSCRIBER_ID` | Subscriber ID sent on generate/update/list/save requests and used when formatting IDs for the API |
 | `VITE_LIBERTY_FS_BASE_URL` | Optional. Base URL where built screen folders are served for the preview iframe. If unset, the client defaults to `http://localhost:843/` (see `src/lib/api.ts`) |
 
 Request URLs are composed as:
 
-`{VITE_API_URL}/{VITE_API_CONTEXT_PATH}/aiqod-agent/agent/<endpoint>`
+`{VITE_API_URL}/{VITE_API_CONTEXT_PATH}/ai-agent/agent/<endpoint>`
 
 Endpoints used include `generate-angular-app`, `update-angular-screen`, `stream/:jobId`, `save-screen`, `ui-list`, `ui-screen/:id`, `credits`, `health`, `screen-versions`, `rollback-screen`, and project credential routes.
 
